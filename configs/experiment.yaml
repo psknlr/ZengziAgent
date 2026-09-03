@@ -1,0 +1,34 @@
+# Frozen experimental protocol (Section 4.X Implementation and Reproducibility).
+schema: configs/schema/five_label.yaml
+datasets:
+  substanreview:
+    loader: substanreview
+    root: data/substanreview
+    eval_split: test          # 110 reviews; demonstrations are drawn from the train split only
+    demo_split: train
+  elife:
+    loader: jsonl
+    path: data/elife/gold/elife_gold.jsonl      # human-annotated eLife reviewer reports (same JSONL schema)
+    demo_path: data/elife/gold/elife_demos.jsonl  # held-out annotated reports used only as demonstrations
+sampling:
+  temperature: 0.0
+  top_p: 1.0
+  max_tokens: 4096
+  seed: 20240901            # incremented by run index where the provider supports seeds
+runs: 3
+alignment:
+  similarity_threshold: 0.80
+  tokenizer: auto           # spaCy blank English tokenizer if installed, else regex
+evaluation:
+  unit_mode: gold_span      # each gold span is one evaluated annotation unit (Table 4 counts)
+  iou_threshold: 0.5        # tau for TP = 1[y_p = y_g and IoU_tok >= tau]
+  iou_sensitivity: [0.3, 0.5, 0.7, 0.9, 1.0]
+  rejected_span_policy: count_as_fp
+statistics:
+  bootstrap_resamples: 10000
+  bootstrap_unit: review
+  confidence: 0.95
+  multiple_comparison: holm
+  seed: 12345
+refinement:
+  max_retries: 2
