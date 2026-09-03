@@ -103,7 +103,8 @@ def train_and_predict(
     lab2id = {c: i for i, c in enumerate(CLASSES)}
 
     def collate(batch):
-        texts = [(b["context"] + " " + tok.sep_token + " " + b["text"]) if b["context"] else b["text"] for b in batch]
+        sep = tok.sep_token or "\n"  # GPT-2 has no [SEP] token
+        texts = [(b["context"] + " " + sep + " " + b["text"]) if b["context"] else b["text"] for b in batch]
         enc = tok(texts, truncation=True, max_length=max_length, padding=True, return_tensors="pt")
         enc["labels"] = torch.tensor([lab2id[b["label"]] for b in batch])
         return enc
