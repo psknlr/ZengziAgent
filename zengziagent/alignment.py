@@ -125,7 +125,7 @@ class TextAligner:
         self.min_anchor = min_anchor
         self.max_candidates = max_candidates
         self.refine_radius = refine_radius
-        self._norm_cache: dict[int, tuple[str, list[int]]] = {}
+        self._norm_cache: dict[str, tuple[str, list[int]]] = {}
 
     # ------------------------------------------------------------------ public
     def describe(self) -> dict:
@@ -172,13 +172,14 @@ class TextAligner:
 
     # ------------------------------------------------------------- internals
     def _source_norm(self, source: str) -> tuple[str, list[int]]:
-        key = id(source)
-        cached = self._norm_cache.get(key)
-        if cached is None or cached[0] is None:
+        # keyed by value (not id()): a str key keeps the source alive and compares by content,
+        # so a recycled object id can never serve a stale normalisation of another review
+        cached = self._norm_cache.get(source)
+        if cached is None:
             cached = normalize_for_match(source)
             if len(self._norm_cache) > 64:
                 self._norm_cache.clear()
-            self._norm_cache[key] = cached
+            self._norm_cache[source] = cached
         return cached
 
     def _normalized_match(self, source, span_text, hint_pos, prev_end) -> Optional[AlignmentResult]:

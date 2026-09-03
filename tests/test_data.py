@@ -49,3 +49,24 @@ def test_elife_extraction():
     assert by_rev["3"].text == "The statistics need work."
     assert all(r.sub_article_type == "decision-letter" and r.round_index == 1 for r in reports)
     assert not any("thank you for submitting" in r.text.lower() for r in reports)
+
+
+def test_canonical_layout_is_validated_and_whitespace_trimmed(tmp_path: Path):
+    p = tmp_path / "gold.jsonl"
+    row = {"review_id": "elife-1", "dataset": "elife", "text": "Good paper. Weak eval. ", "gold_spans": [{"start": 0, "end": 12, "label": "Eval_pos_1"}, {"start": 11, "end": 23, "label": "Major_claim"}, {"start": 0, "end": 4, "label": "Bogus"}], "metadata": {}}
+    p.write_text(json.dumps(row) + "\n")
+    recs = load_records_jsonl(p, dataset="elife")
+    spans = recs[0].gold_spans
+    assert [g.label for g in spans] == ["Eval_pos", "Major_Claim"]
+    assert (spans[0].start, spans[0].end) == (0, 11) and recs[0].text[spans[0].start:spans[0].end] == "Good paper."
+    assert (spans[1].start, spans[1].end) == (12, 22)
+    assert spans[0].occurrence == 1
+
+
+def test_iaa_layout_loads(tmp_path: Path):
+    p = tmp_path / "iaa.jsonl"
+    row = {"id": 3, "text": "Nice work. ", "rid": "r9", "scores": [1, 2], "label": [[0, 11, "Eval_pos_1"]], "Comments": ""}
+    p.write_text(json.dumps(row) + "\n")
+    recs = load_records_jsonl(p, dataset="substanreview-iaa")
+    assert recs[0].text == "Nice work. " and recs[0].metadata["rid"] == "r9"
+    assert (recs[0].gold_spans[0].start, recs[0].gold_spans[0].end) == (0, 10)

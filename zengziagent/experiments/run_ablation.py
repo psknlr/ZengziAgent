@@ -8,7 +8,9 @@ Example::
 from __future__ import annotations
 
 import argparse
+import sys
 
+from ..llm.base import LLMRequestError
 from ..utils import LOG, setup_logging
 from .common import ExperimentConfig
 from .configs import ORDER, get_config
@@ -43,6 +45,8 @@ def main(argv=None) -> None:
                     except FileNotFoundError as exc:
                         LOG.error("%s", exc)
                         break
+                    except LLMRequestError as exc:
+                        sys.exit(f"non-retryable provider error for {spec}: {exc}")
 
 
 if __name__ == "__main__":  # pragma: no cover

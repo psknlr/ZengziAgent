@@ -24,7 +24,7 @@ from .. import __version__
 from ..actor import PromptSynthesizer, build_prompt_bundle
 from ..data.units import dataset_hash
 from ..llm import ResponseCache, resolve_backend
-from ..llm.base import LLMBackend
+from ..llm.base import LLMBackend, LLMRequestError
 from ..pipeline import ZengziAgentPipeline
 from ..planner import Planner
 from ..schema import PipelineConfig, ReviewRecord
@@ -36,6 +36,18 @@ from .configs import ORDER, get_config
 def build_backend(spec: str, cache_path: Optional[str], **kwargs) -> LLMBackend:
     cache = ResponseCache(cache_path) if cache_path and not spec.startswith("mock") else None
     return resolve_backend(spec, cache=cache, **kwargs)
+
+
+def run_is_complete(rd: Path, expected_ids: list[str]) -> bool:
+    """A run directory is reused only if its manifest lists exactly the expected record ids and no errors."""
+    man_path = rd / "manifest.json"
+    if not man_path.exists():
+        return False
+    try:
+        man = read_json(man_path)
+    except Exception:
+        return False
+    return list(man.get("record_ids", [])) == list(expected_ids) and int(man.get("n_errors", 0) or 0) == 0
 
 
 def run_experiment(
@@ -57,13 +69,17 @@ def run_experiment(
     if previous_run_dir is not None:
         rd = previous_run_dir / "round2"
     pred_path = rd / "predictions.jsonl"
-    if pred_path.exists() and not force:
-        LOG.info("skipping existing run %s (use --force to redo)", rd)
-        return rd
     evals, demos = exp.load_dataset(dataset)
     if limit:
         evals = evals[:limit]
+    expected_ids = [r.review_id for r in evals]
+    if pred_path.exists() and not force:
+        if run_is_complete(rd, expected_ids):
+            LOG.info("skipping existing run %s (same record ids, no errors; use --force to redo)", rd)
+            return rd
+        LOG.info("re-running %s: existing run covers a different subset or contains errors", rd)
     backend = backend or build_backend(backend_spec, cache_path)
+    capabilities = backend.probe_capabilities() if hasattr(backend, "probe_capabilities") else {"seed_sent": False}
     schema = exp.schema
     started = utc_now()
     # Stage 1 ------------------------------------------------------------------
@@ -87,15 +103,19 @@ def run_experiment(
         return pipeline.run(rec, run_index=run_index, previous_xml=previous_xml.get(rec.review_id) if previous_run_dir is not None else None)
 
     t0 = time.time()
-    if workers > 1:
-        with ThreadPoolExecutor(max_workers=workers) as ex:
-            results = list(ex.map(work, evals))
-    else:
-        results = []
-        for i, rec in enumerate(evals):
-            results.append(work(rec))
-            if (i + 1) % 10 == 0:
-                LOG.info("%s/%s/%s run%d: %d/%d reviews", dataset, backend_spec, config.config_id, run_index, i + 1, len(evals))
+    try:
+        if workers > 1:
+            with ThreadPoolExecutor(max_workers=workers) as ex:
+                results = list(ex.map(work, evals))
+        else:
+            results = []
+            for i, rec in enumerate(evals):
+                results.append(work(rec))
+                if (i + 1) % 10 == 0:
+                    LOG.info("%s/%s/%s run%d: %d/%d reviews", dataset, backend_spec, config.config_id, run_index, i + 1, len(evals))
+    except LLMRequestError as exc:
+        LOG.error("aborting %s/%s/%s run%d without writing results: %s", dataset, backend_spec, config.config_id, run_index, exc)
+        raise
     elapsed = time.time() - t0
     rd.mkdir(parents=True, exist_ok=True)
     write_jsonl(pred_path, (r.to_dict() for r in results))
@@ -114,8 +134,12 @@ def run_experiment(
         "model_requested": backend.model,
         "models_returned": models_returned,
         "backend_family": backend.family,
+        "backend": backend.describe(),
+        "backend_capabilities": capabilities,
+        "seed_sent": bool(capabilities.get("seed_sent", False)) and exp.sampling.seed is not None,
         "config": config.to_dict(),
         "sampling": exp.sampling.to_dict(),
+        "limit": limit,
         "run_index": run_index,
         "round": 2 if previous_run_dir is not None else 1,
         "started_at": started,
@@ -129,6 +153,7 @@ def run_experiment(
         "alignment": pipeline.aligner.describe(),
         "alignment_applicable": True,
         "n_errors": sum(1 for r in results if r.error),
+        "n_truncated": sum(1 for r in results for a in r.attempts if a.finish_reason == "length"),
         "n_flagged": sum(1 for r in results if r.flagged),
         "total_retries": sum(r.retries for r in results),
         "n_llm_calls": sum(len(r.attempts) for r in results),
@@ -182,6 +207,8 @@ def main(argv=None) -> None:
                     run_experiment(exp, ds, args.backend, cfg, k, out_root=args.out, limit=args.limit, workers=args.workers, force=args.force, backend=backend, cache_path=args.cache)
                 except FileNotFoundError as exc:
                     LOG.error("%s", exc)
+                except LLMRequestError as exc:
+                    sys.exit(f"non-retryable provider error: {exc}")
 
 
 if __name__ == "__main__":  # pragma: no cover

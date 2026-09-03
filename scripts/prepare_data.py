@@ -30,6 +30,7 @@ def main() -> None:
     ap.add_argument("--elife-sample", type=int, default=0, help="sample N articles per year via OpenAlex")
     ap.add_argument("--years", type=int, nargs="*", default=[2016, 2017, 2018, 2019, 2020])
     ap.add_argument("--mailto", default=None, help="contact e-mail for the OpenAlex polite pool")
+    ap.add_argument("--openalex-api-key", default=None)
     ap.add_argument("--elife-out", default="data/elife/reviews.jsonl")
     ap.add_argument("--granularity", choices=["article", "reviewer"], default="article")
     ap.add_argument("--seed", type=int, default=0)
@@ -50,7 +51,7 @@ def main() -> None:
     if args.elife_sample:
         sampled = []
         for y in args.years:
-            works = list_elife_articles_openalex(y, args.elife_sample, seed=args.seed + y, mailto=args.mailto)
+            works = list_elife_articles_openalex(y, args.elife_sample, seed=args.seed + y, mailto=args.mailto, api_key=args.openalex_api_key)
             print(f"eLife {y}: sampled {len(works)} articles")
             sampled.extend(works)
         write_json(Path(args.elife_out).with_name("sampled_articles.json"), sampled)

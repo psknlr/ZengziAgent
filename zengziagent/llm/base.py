@@ -7,6 +7,12 @@ from typing import Optional
 from ..schema import SamplingParams
 
 
+class LLMRequestError(RuntimeError):
+    """Non-retryable provider error (authentication, unknown model, malformed request ...).
+
+    Raised through the pipeline so that a run aborts instead of persisting empty results."""
+
+
 @dataclass
 class ChatMessage:
     role: str  # "system" | "user" | "assistant"

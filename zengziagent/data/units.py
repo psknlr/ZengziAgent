@@ -19,10 +19,18 @@ def load_records_jsonl(path: str | Path, dataset: str | None = None) -> list[Rev
     """
     out: list[ReviewRecord] = []
     for row in read_jsonl(path):
-        if "text" in row and "review_id" in row:
+        if "text" in row and "review_id" in row and "gold_spans" in row:
             rec = ReviewRecord.from_dict(row)
             if dataset:
                 rec.dataset = dataset
+            spans = []
+            for g in rec.gold_spans:  # canonical layout is validated exactly like the release layout
+                lab, occ = canonical_label(g.label)
+                if lab is None:
+                    LOG.warning("skipping unknown gold label %r in review %s", g.label, rec.review_id)
+                    continue
+                spans.append(GoldSpan(start=g.start, end=g.end, label=lab, occurrence=g.occurrence if g.occurrence is not None else occ, raw_label=g.raw_label or g.label))
+            rec.gold_spans = spans
         else:
             spans = []
             for item in row.get("label", []) or []:
@@ -32,15 +40,42 @@ def load_records_jsonl(path: str | Path, dataset: str | None = None) -> list[Rev
                     LOG.warning("skipping unknown gold label %r in review %s", raw, row.get("id"))
                     continue
                 spans.append(GoldSpan(start=s, end=e, label=lab, occurrence=occ, raw_label=raw))
+            text = row["review"] if "review" in row else row["text"]  # IAA files use "text"
+            meta = dict(row.get("meta", row.get("metadata", {})) or {})
+            for extra in ("rid", "scores", "Comments"):
+                if extra in row:
+                    meta[extra] = row[extra]
             rec = ReviewRecord(
                 review_id=str(row.get("review_id", row.get("id"))),
                 dataset=dataset or row.get("dataset", "unknown"),
-                text=row["review"],
+                text=text,
                 gold_spans=spans,
-                metadata=row.get("meta", row.get("metadata", {})) or {},
+                metadata=meta,
             )
+        rec.gold_spans = _trim_boundary_whitespace(rec.text, rec.gold_spans, rec.review_id)
         rec.gold_spans.sort(key=lambda g: (g.start, g.end))
         out.append(rec)
+    return out
+
+
+def _trim_boundary_whitespace(text: str, spans: list[GoldSpan], review_id: str) -> list[GoldSpan]:
+    """Gold offsets in the SubstanReview release frequently include a leading/trailing space
+    (23% of spans).  Model spans are stripped before alignment, so boundary whitespace would
+    make exact span matches unattainable; offsets are trimmed here and the raw ones kept."""
+    out = []
+    for g in spans:
+        s, e = g.start, g.end
+        while s < e and text[s].isspace():
+            s += 1
+        while e > s and text[e - 1].isspace():
+            e -= 1
+        if e <= s:
+            LOG.warning("dropping empty gold span %s-%s in review %s", g.start, g.end, review_id)
+            continue
+        if (s, e) != (g.start, g.end):
+            g.raw_label = g.raw_label or g.label
+            g = GoldSpan(start=s, end=e, label=g.label, occurrence=g.occurrence, raw_label=g.raw_label)
+        out.append(g)
     return out
 
 

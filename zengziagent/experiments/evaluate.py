@@ -39,8 +39,13 @@ def discover_runs(raw_root: str | Path) -> list[dict]:
     return runs
 
 
+def resolve_taus(taus: list[float] | None, exp: ExperimentConfig) -> list[float]:
+    """The primary tau is always evaluated (per-review/unit files are written for it)."""
+    return sorted(set(taus or exp.tau_grid) | {exp.tau})
+
+
 def evaluate_all(raw_root: str | Path, out_root: str | Path, exp: ExperimentConfig, taus: list[float] | None = None, only_datasets: list[str] | None = None) -> pd.DataFrame:
-    taus = taus or sorted(set([exp.tau] + exp.tau_grid))
+    taus = resolve_taus(taus, exp)
     tok = get_tokenizer(exp.raw.get("alignment", {}).get("tokenizer", "auto"))
     policy = exp.rejected_policy
     dataset_cache: dict[str, dict] = {}
@@ -114,7 +119,18 @@ def evaluate_all(raw_root: str | Path, out_root: str | Path, exp: ExperimentConf
             continue
         evs = [e for _, es, _ in items for e in es]
         base = dict(items[0][2])
-        base.update({"dataset": "pooled", "dataset_hash": "|".join(sorted({kb["dataset_hash"] or "" for _, _, kb in items}))})
+        base.update(
+            {
+                "dataset": "pooled",
+                "dataset_hash": "|".join(sorted({kb["dataset_hash"] or "" for _, _, kb in items})),
+                "prompt_hash": "|".join(sorted({kb["prompt_hash"] or "" for _, _, kb in items})),
+                "spec_hash": "|".join(sorted({kb["spec_hash"] or "" for _, _, kb in items})),
+                "models_returned": "|".join(sorted({kb["models_returned"] or "" for _, _, kb in items})),
+            }
+        )
+        for counter in ("n_llm_calls", "total_retries", "n_flagged", "n_errors"):
+            vals = [kb.get(counter) for _, _, kb in items]
+            base[counter] = sum(int(v) for v in vals if v is not None) if any(v is not None for v in vals) else None
         agg = aggregate(evs)
         master_rows.append({**base, "tau": tau, **{k: v for k, v in agg.items() if k not in ("per_label", "confusion")}})
         for lab in LABELS:

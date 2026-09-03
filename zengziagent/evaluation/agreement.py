@@ -68,6 +68,7 @@ def inter_run_agreement(run_labels: Sequence[Sequence]) -> dict:
             mat[i, idx[str(x)]] += 1
     return {
         "pairwise_agreement": float(np.mean(pair_scores)),
+        "pairwise_agreement_sd": float(np.std(pair_scores, ddof=1)) if len(pair_scores) > 1 else 0.0,
         "pairwise_cohen_kappa": float(np.mean(kappas)),
         "fleiss_kappa": float(fleiss_kappa(mat)) if n else float("nan"),
         "n_runs": len(runs),

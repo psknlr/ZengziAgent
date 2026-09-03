@@ -90,6 +90,8 @@ def _pool_runs(df: pd.DataFrame) -> pd.DataFrame:
             }
         )
     out = pd.DataFrame(rows)
+    if out.empty:
+        return out
     out["_o"] = out["dataset"].map(DATASET_ORDER).fillna(5)
     return out.sort_values(["_o", "backend", "config_id"]).drop(columns="_o").reset_index(drop=True)
 
@@ -152,6 +154,8 @@ def make_tables(master_dir: Path, out_dir: Path, exp: ExperimentConfig) -> None:
     # ---- full ablation P/R/F1 (supplementary)
     supp = prim.copy()
     supp["Dataset"] = supp["dataset"].map(DATASET_NAMES).fillna(supp["dataset"])
+    for col in ("exact_span_match_rate", "mean_token_iou", "rejected_span_rate"):
+        supp[col] = [_fmt(v) if a else "N/A" for v, a in zip(supp[col], supp["alignment_applicable"])]
     supp = supp[["Dataset", "backend", "config_id", "config_name", "n_units", "accuracy", "precision", "recall", "f1", "exact_span_match_rate", "mean_token_iou", "rejected_span_rate"]].rename(columns={"backend": "Model", "config_id": "ID", "config_name": "Configuration", "n_units": "N units", "accuracy": "Accuracy", "precision": "Precision", "recall": "Recall", "f1": "F1", "exact_span_match_rate": "Exact span match", "mean_token_iou": "Token IoU", "rejected_span_rate": "Rejected span rate"})
     _write(supp, out_dir, "table_ablation_full_metrics", "Supplementary: complete metrics for every configuration (counts pooled over runs).")
     LOG.info("tables written to %s", out_dir)

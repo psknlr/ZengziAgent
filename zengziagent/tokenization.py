@@ -9,6 +9,7 @@ which tokenizer was used).
 from __future__ import annotations
 
 import re
+import threading
 from collections import OrderedDict
 from typing import Protocol, Sequence
 
@@ -23,20 +24,25 @@ class Tokenizer(Protocol):
 
 
 class _SpanCache:
+    """Small LRU cache of token spans keyed by the text itself (thread-safe)."""
+
     def __init__(self, maxsize: int = 4096):
         self.maxsize = maxsize
         self._d: "OrderedDict[str, list[tuple[int, int]]]" = OrderedDict()
+        self._lock = threading.Lock()
 
     def get(self, key: str):
-        v = self._d.get(key)
-        if v is not None:
-            self._d.move_to_end(key)
-        return v
+        with self._lock:
+            v = self._d.get(key)
+            if v is not None:
+                self._d.move_to_end(key)
+            return v
 
     def put(self, key: str, value):
-        self._d[key] = value
-        if len(self._d) > self.maxsize:
-            self._d.popitem(last=False)
+        with self._lock:
+            self._d[key] = value
+            if len(self._d) > self.maxsize:
+                self._d.popitem(last=False)
 
 
 class RegexTokenizer:
@@ -66,12 +72,14 @@ class SpacyTokenizer:
         self._nlp = spacy.blank("en")
         self._nlp.max_length = 5_000_000
         self._cache = _SpanCache()
+        self._lock = threading.Lock()  # spaCy's tokenizer is not documented as thread-safe
 
     def spans(self, text: str) -> list[tuple[int, int]]:
         cached = self._cache.get(text)
         if cached is not None:
             return cached
-        doc = self._nlp.make_doc(text)
+        with self._lock:
+            doc = self._nlp.make_doc(text)
         out = [(t.idx, t.idx + len(t.text)) for t in doc if not t.is_space]
         self._cache.put(text, out)
         return out

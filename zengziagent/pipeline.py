@@ -8,7 +8,7 @@ from typing import Optional
 from .actor import PromptBundle
 from .alignment import TextAligner, exact_only_aligner
 from .analyzer import Analyzer, ParsedOutput
-from .llm.base import LLMBackend, LLMResponse
+from .llm.base import LLMBackend, LLMRequestError, LLMResponse
 from .preprocessor import Preprocessor
 from .recorder import AlignedSpan, Recorder, ValidationReport, Validator
 from .schema import PipelineConfig, ReviewRecord, SamplingParams
@@ -26,6 +26,7 @@ class Attempt:
     cached: bool
     prompt_tokens: Optional[int] = None
     completion_tokens: Optional[int] = None
+    finish_reason: Optional[str] = None
 
     def to_dict(self) -> dict:
         return self.__dict__.copy()
@@ -147,7 +148,7 @@ class ZengziAgentPipeline:
                 )
                 report, spans = self.validator.validate(parsed, processed)  # line 5 + 7
                 result.attempts.append(
-                    Attempt(kind, resp.text, len(parsed.annotations), report.to_dict(), resp.latency_s, resp.model_returned, resp.cached, resp.prompt_tokens, resp.completion_tokens)
+                    Attempt(kind, resp.text, len(parsed.annotations), report.to_dict(), resp.latency_s, resp.model_returned, resp.cached, resp.prompt_tokens, resp.completion_tokens, resp.finish_reason)
                 )
                 result.final_xml = resp.text
                 if not (self.config.use_validation and report.blocking):
@@ -162,6 +163,8 @@ class ZengziAgentPipeline:
             result.spans = self.recorder.finalize(spans)  # line 8-9
             result.final_validation = report.to_dict() if report else None
             result.flagged = bool(report and report.blocking)
+        except LLMRequestError:
+            raise  # authentication / unknown model: abort the run instead of persisting empty results
         except Exception as exc:  # keep the run going; the evaluator treats errors as empty output
             result.error = f"{type(exc).__name__}: {exc}"
         result.timing_s = time.time() - t0

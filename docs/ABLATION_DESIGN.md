@@ -42,7 +42,7 @@ no parameter update.  The specification and the rendered prompt are written next
 * **ΔF1, ΔAccuracy** with **paired bootstrap** CIs: reviews are resampled with replacement
   (10,000 resamples), counts are summed and micro-F1 / accuracy recomputed for both systems from the
   same resample; percentile 95% CI; two-sided bootstrap p.
-* **McNemar (exact binomial)** on paired unit-level correctness.
+* **McNemar (exact binomial)** on paired unit-level correctness; with pooled runs each *distinct* unit contributes one pair (correct = correct in at least half of the runs), so repeated runs never inflate the discordant counts.
 * **Holm** step-down correction within each dataset × backend family of ablation contrasts
   (7 contrasts) and within the family of pairwise backend comparisons.
 * **Dataset contrast** `ΔF1(eLife) − ΔF1(SubstanReview)` with independent review-level

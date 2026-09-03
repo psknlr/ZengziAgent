@@ -39,8 +39,13 @@ _BOILERPLATE_PREFIXES = (
     "we are pleased to",
     "[editors' note",
     "[editors’ note",
+    "we would like to draw your attention to changes in our revision policy",
+    "our editorial process produces two outputs",
+    "as the editors have judged that your manuscript is of interest",
+    "if you choose to revise",
+    "please submit your revised article",
 )
-_SECTION_HEADERS = {"summary:", "essential revisions:", "major comments:", "minor comments:", "reviewer #1:", "additional comments:"}
+_SECTION_HEADERS = {"summary:", "essential revisions:", "essential revisions (for the authors):", "major comments:", "minor comments:", "reviewer #1:", "additional comments:", "acceptance summary:", "decision letter after peer review:", "evaluation summary:", "public review:"}
 
 
 @dataclass
@@ -247,17 +252,21 @@ def attach_gold(records: list[ReviewRecord], gold_path: str | Path) -> list[Revi
     return out
 
 
-def list_elife_articles_openalex(year: int, n: int, seed: int = 0, mailto: Optional[str] = None, per_page: int = 200, max_pages: int = 20) -> list[dict]:
+def list_elife_articles_openalex(year: int, n: int, seed: int = 0, mailto: Optional[str] = None, per_page: int = 200, max_pages: int = 20, api_key: Optional[str] = None, max_wait_s: float = 120.0) -> list[dict]:
     """Deterministically sample ``n`` eLife research articles from ``year`` via OpenAlex.
 
     Uses ``filter=primary_location.source.issn:2050-084X,publication_year:<year>,type:article``.
+    HTTP 429 honours ``Retry-After`` (up to ``max_wait_s``) and does not consume a page; an empty
+    result raises instead of silently returning nothing.
     """
     import httpx  # noqa: WPS433
 
     works: list[dict] = []
     cursor = "*"
+    pages = 0
+    waited = 0.0
     with httpx.Client(timeout=60) as client:
-        for _ in range(max_pages):
+        while pages < max_pages:
             params = {
                 "filter": f"primary_location.source.issn:2050-084X,publication_year:{year},type:article",
                 "per-page": per_page,
@@ -266,11 +275,23 @@ def list_elife_articles_openalex(year: int, n: int, seed: int = 0, mailto: Optio
             }
             if mailto:
                 params["mailto"] = mailto
+            if api_key:
+                params["api_key"] = api_key
             r = client.get("https://api.openalex.org/works", params=params)
             if r.status_code == 429:
-                time.sleep(2.0)
+                retry = r.headers.get("Retry-After")
+                try:
+                    delay = float(retry) if retry else float((r.json() or {}).get("retryAfter", 5))
+                except Exception:
+                    delay = 5.0
+                if waited + delay > max_wait_s:
+                    raise RuntimeError(f"OpenAlex rate limit exceeded (retry after {delay:.0f}s): {r.text[:200]}")
+                LOG.warning("OpenAlex 429; waiting %.0fs", delay)
+                time.sleep(delay)
+                waited += delay
                 continue
             r.raise_for_status()
+            pages += 1
             data = r.json()
             for w in data.get("results", []):
                 doi = (w.get("doi") or "").lower()
@@ -281,6 +302,10 @@ def list_elife_articles_openalex(year: int, n: int, seed: int = 0, mailto: Optio
             if not cursor:
                 break
             time.sleep(0.2)
+    if not works:
+        raise RuntimeError(f"OpenAlex returned no eLife articles for {year}")
+    if len(works) < n:
+        LOG.warning("OpenAlex returned only %d eLife articles for %d (requested %d)", len(works), year, n)
     rng = random.Random(seed)
     works.sort(key=lambda w: w["article_id"])
     rng.shuffle(works)

@@ -12,8 +12,10 @@ Checks performed on the master results table:
 """
 from __future__ import annotations
 
+import json
 import math
 from dataclasses import dataclass
+from pathlib import Path
 
 import pandas as pd
 
@@ -75,7 +77,7 @@ def audit_master(df: pd.DataFrame, tol: float = 1e-6) -> list[Finding]:
     return findings
 
 
-def pooled_vs_mean_report(df: pd.DataFrame, group_cols=("backend", "config_id", "run"), dataset_col: str = "dataset") -> pd.DataFrame:
+def pooled_vs_mean_report(df: pd.DataFrame, group_cols=("backend", "config_id", "run", "round", "tau"), dataset_col: str = "dataset") -> pd.DataFrame:
     """For every group, compare pooled micro metrics with the arithmetic mean of the dataset rows."""
     rows = []
     real = df[df[dataset_col] != "pooled"]
@@ -93,8 +95,26 @@ def pooled_vs_mean_report(df: pd.DataFrame, group_cols=("backend", "config_id", 
     return pd.DataFrame(rows)
 
 
-def compare_with_manuscript(master: pd.DataFrame, manuscript: pd.DataFrame, keys=("dataset", "backend", "config_id"), metrics=("accuracy", "precision", "recall", "f1"), tol: float = 5e-5) -> pd.DataFrame:
-    """Cross-check numbers typed into the manuscript (CSV export of a table) against the master table."""
+def reported_view(master: pd.DataFrame, tau: float, round_: int = 1) -> pd.DataFrame:
+    """Reduce the master table to what the manuscript tables report: primary tau, round 1,
+    counts pooled over runs, metrics recomputed from the pooled counts."""
+    sub = master[(master["tau"] == tau) & (master["round"] == round_)]
+    rows = []
+    for (ds, backend, cid), g in sub.groupby(["dataset", "backend", "config_id"]):
+        n, c, tp, fp, fn = (int(g[k].sum()) for k in ("n_units", "n_correct", "tp", "fp", "fn"))
+        rows.append({"dataset": ds, "backend": backend, "config_id": cid, "n_runs": int(g["run"].nunique()), "n_units": n, "n_correct": c, "tp": tp, "fp": fp, "fn": fn, **metrics_from_counts(n, c, tp, fp, fn)})
+    return pd.DataFrame(rows)
+
+
+def compare_with_manuscript(master: pd.DataFrame, manuscript: pd.DataFrame, keys=("dataset", "backend", "config_id"), metrics=("accuracy", "precision", "recall", "f1"), tol: float = 5e-5, tau: float | None = None, round_: int = 1) -> pd.DataFrame:
+    """Cross-check numbers typed into the manuscript (CSV export of a table) against the master table.
+
+    ``master`` may be the raw master table (one row per tau x run x round) - it is reduced to the
+    reported view first (``tau`` defaults to the smallest |tau - 0.5| present)."""
+    if "tau" in master.columns:
+        if tau is None:
+            tau = min(master["tau"].unique(), key=lambda t: abs(t - 0.5))
+        master = reported_view(master, tau, round_)
     m = master.merge(manuscript, on=list(keys), suffixes=("_master", "_manuscript"))
     rows = []
     for _, r in m.iterrows():
@@ -112,8 +132,15 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="Audit a master results CSV for internal numerical consistency.")
     ap.add_argument("master_csv")
     ap.add_argument("--manuscript-csv", default=None, help="CSV with dataset,backend,config_id,accuracy,precision,recall,f1 typed from the manuscript")
+    ap.add_argument("--tau", type=float, default=None, help="primary tau of the reported view (default: evaluation_settings.json next to the master CSV, else 0.5)")
+    ap.add_argument("--round", type=int, default=1)
     args = ap.parse_args(argv)
     df = pd.read_csv(args.master_csv)
+    tau = args.tau
+    if tau is None:
+        settings = Path(args.master_csv).with_name("evaluation_settings.json")
+        if settings.exists():
+            tau = float(json.loads(settings.read_text()).get("primary_tau", 0.5))
     findings = audit_master(df)
     n_err = 0
     for f in findings:
@@ -124,7 +151,7 @@ def main(argv=None) -> int:
         print("\nPooled micro metrics vs arithmetic mean of dataset rows (should differ in general):")
         print(rep.round(4).to_string(index=False))
     if args.manuscript_csv:
-        cmp = compare_with_manuscript(df[df.get("run", 0) == df.get("run", 0)], pd.read_csv(args.manuscript_csv))
+        cmp = compare_with_manuscript(df, pd.read_csv(args.manuscript_csv), tau=tau, round_=args.round)
         print("\nManuscript cross-check:")
         print(cmp.to_string(index=False))
         n_err += int((~cmp["ok"]).sum()) if not cmp.empty else 0

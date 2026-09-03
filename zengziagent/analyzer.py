@@ -1,6 +1,7 @@
 """Stage 4 - Annotation Generation (Analyzer): LLM call + tolerant XML parsing."""
 from __future__ import annotations
 
+import html
 import re
 from dataclasses import dataclass, field
 from typing import Optional
@@ -50,7 +51,8 @@ class ParsedOutput:
 
 
 def _unescape(s: str) -> str:
-    return s.replace("&lt;", "<").replace("&gt;", ">").replace("&quot;", '"').replace("&apos;", "'").replace("&amp;", "&").strip()
+    """Decode named *and* numeric character references (``&#39;``, ``&#x2019;`` ...)."""
+    return html.unescape(s).strip()
 
 
 def parse_xml_annotations(raw: str) -> ParsedOutput:
@@ -129,9 +131,12 @@ class Analyzer:
             messages.append(ChatMessage("user", user))
         elif validation_feedback is not None:  # refinement round (Stage 5 feedback loop)
             messages.append(ChatMessage("user", user))
-            if previous_output is not None:
+            note = ""
+            if previous_output is not None and previous_output.strip():
                 messages.append(ChatMessage("assistant", previous_output))
-            messages.append(ChatMessage("user", "Your previous output failed validation:\n" + validation_feedback + "\nReturn the complete corrected XML only. Every <text> must be copied verbatim from the reviewer comment and every <label> must be one of the permitted labels."))
+            else:  # empty assistant turns are rejected by some providers
+                note = "(Your previous response was empty.) "
+            messages.append(ChatMessage("user", note + "Your previous output failed validation:\n" + validation_feedback + "\nReturn the complete corrected XML only. Every <text> must be copied verbatim from the reviewer comment and every <label> must be one of the permitted labels."))
         else:
             messages.append(ChatMessage("user", user))
         resp = self.backend.complete(messages, self.params, run_index=run_index, tag=f"{dataset}:{review_id}")

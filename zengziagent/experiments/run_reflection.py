@@ -7,8 +7,10 @@ Example::
 from __future__ import annotations
 
 import argparse
+import sys
 from pathlib import Path
 
+from ..llm.base import LLMRequestError
 from ..utils import LOG, setup_logging
 from .common import ExperimentConfig, run_dir
 from .configs import get_config
@@ -41,7 +43,10 @@ def main(argv=None) -> None:
                 if not (r1 / "predictions.jsonl").exists():
                     LOG.warning("no R1 predictions at %s; run run_annotation first", r1)
                     continue
-                run_experiment(exp, ds, args.backend, cfg, k, out_root=args.out, limit=args.limit, workers=args.workers, force=args.force, backend=backend, cache_path=args.cache, previous_run_dir=Path(r1))
+                try:
+                    run_experiment(exp, ds, args.backend, cfg, k, out_root=args.out, limit=args.limit, workers=args.workers, force=args.force, backend=backend, cache_path=args.cache, previous_run_dir=Path(r1))
+                except LLMRequestError as exc:
+                    sys.exit(f"non-retryable provider error: {exc}")
 
 
 if __name__ == "__main__":  # pragma: no cover

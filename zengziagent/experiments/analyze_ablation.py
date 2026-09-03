@@ -27,6 +27,14 @@ from .common import ExperimentConfig
 from .configs import ABLATIONS, ORDER
 
 COUNT_COLS = ["n_units", "n_correct", "tp", "fp", "fn"]
+#: header rows written even when a table has no data (so downstream readers never see an empty file)
+EMPTY_COLUMNS = {
+    "ablation_main": ["dataset", "backend", "ablation", "ablation_name", "n_reviews", "n_units", "n_unit_run_pairs", "acc_full", "acc_ablated", "delta_accuracy", "acc_ci_low", "acc_ci_high", "f1_full", "f1_ablated", "delta_f1", "f1_ci_low", "f1_ci_high", "p_bootstrap_f1", "p_bootstrap_acc", "mcnemar_b", "mcnemar_c", "p_mcnemar", "precision_full", "recall_full", "precision_ablated", "recall_ablated", "p_adj_bootstrap_f1", "p_adj_bootstrap_acc", "p_adj_mcnemar"],
+    "ablation_contrast": ["backend", "ablation", "ablation_name", "dataset_1", "dataset_2", "delta_f1_dataset_1", "delta_f1_dataset_2", "contrast", "ci_low", "ci_high", "p_value"],
+    "backend_pairwise": ["dataset", "backend_a", "backend_b", "f1_a", "f1_b", "delta_f1", "ci_low", "ci_high", "p_bootstrap", "mcnemar_b", "mcnemar_c", "p_mcnemar", "p_adj_bootstrap", "p_adj_mcnemar"],
+    "multirun_stability": ["dataset", "backend", "config_id", "n_runs", "accuracy_mean", "accuracy_sd", "f1_mean", "f1_sd", "inter_run_agreement", "inter_run_agreement_sd", "inter_run_fleiss_kappa"],
+    "reflection_r1_r2": ["dataset", "backend", "config_id", "f1_r1", "f1_r2", "delta_f1_r2_minus_r1", "f1_ci_low", "f1_ci_high", "p_f1", "acc_r1", "acc_r2", "delta_acc", "acc_ci_low", "acc_ci_high", "p_acc"],
+}
 
 
 def _count_matrix(df: pd.DataFrame, runs_policy: str) -> tuple[pd.DataFrame, np.ndarray]:
@@ -43,10 +51,17 @@ def _aligned(a: pd.DataFrame, b: pd.DataFrame) -> tuple[np.ndarray, np.ndarray]:
 
 
 def _unit_correct(units: pd.DataFrame, runs_policy: str) -> pd.Series:
+    """Paired unit-level correctness for McNemar.
+
+    ``run0``: the first run.  ``pooled``: one value per *distinct* unit - correct when the unit
+    was labelled correctly in at least half of the runs (majority collapse).  Treating every
+    (unit, run) pair as an independent observation would multiply discordant counts by the
+    number of runs and make the test anti-conservative.
+    """
     if runs_policy == "run0":
         units = units[units["run"] == units["run"].min()]
-    # pooled: a unit counts as correct in each run; McNemar over (unit, run) pairs
-    return units.set_index(["unit_id", "run"])["correct"].sort_index()
+        return units.set_index("unit_id")["correct"].astype(int).sort_index()
+    return (units.groupby("unit_id")["correct"].mean() >= 0.5).astype(int).sort_index()
 
 
 def analyze(master_dir: Path, out_dir: Path, exp: ExperimentConfig, runs_policy: str = "pooled", round_: int = 1) -> dict[str, pd.DataFrame]:
@@ -89,7 +104,8 @@ def analyze(master_dir: Path, out_dir: Path, exp: ExperimentConfig, runs_policy:
                     "ablation": cid,
                     "ablation_name": ABLATIONS[cid].name,
                     "n_reviews": int(len(a)),
-                    "n_units": int(a[:, 0].sum()),
+                    "n_units": int(len(u_full.index.intersection(u_abl.index))) if len(idx) else int(a[:, 0].sum()),
+                    "n_unit_run_pairs": int(a[:, 0].sum()),
                     "acc_full": mf["accuracy"],
                     "acc_ablated": ma["accuracy"],
                     "delta_accuracy": acc["delta"],
@@ -180,9 +196,10 @@ def analyze(master_dir: Path, out_dir: Path, exp: ExperimentConfig, runs_policy:
         u = units[(units["dataset"] == ds) & (units["backend"] == backend) & (units["config_id"] == cid)]
         agreement = {"pairwise_agreement": float("nan"), "fleiss_kappa": float("nan")}
         if len(runs) >= 2:
-            piv = u.pivot_table(index="unit_id", columns="run", values="pred_label", aggfunc="first").fillna("None")
+            # fill before pivoting: pivot_table drops rows whose values are NaN in every run
+            piv = u.assign(pl=u["pred_label"].fillna("None")).pivot_table(index="unit_id", columns="run", values="pl", aggfunc="first").fillna("None")
             agreement = inter_run_agreement([piv[k].tolist() for k in piv.columns])
-        srows.append({"dataset": ds, "backend": backend, "config_id": cid, "n_runs": len(runs), "accuracy_mean": float(np.mean(accs)), "accuracy_sd": float(np.std(accs, ddof=1)) if len(accs) > 1 else 0.0, "f1_mean": float(np.mean(f1s)), "f1_sd": float(np.std(f1s, ddof=1)) if len(f1s) > 1 else 0.0, "inter_run_agreement": agreement["pairwise_agreement"], "inter_run_fleiss_kappa": agreement["fleiss_kappa"]})
+        srows.append({"dataset": ds, "backend": backend, "config_id": cid, "n_runs": len(runs), "accuracy_mean": float(np.mean(accs)), "accuracy_sd": float(np.std(accs, ddof=1)) if len(accs) > 1 else 0.0, "f1_mean": float(np.mean(f1s)), "f1_sd": float(np.std(f1s, ddof=1)) if len(f1s) > 1 else 0.0, "inter_run_agreement": agreement["pairwise_agreement"], "inter_run_agreement_sd": agreement.get("pairwise_agreement_sd", float("nan")), "inter_run_fleiss_kappa": agreement["fleiss_kappa"]})
     out["multirun_stability"] = pd.DataFrame(srows)
 
     # ------------------------------------------------------------- R1 vs R2
@@ -212,6 +229,9 @@ def analyze(master_dir: Path, out_dir: Path, exp: ExperimentConfig, runs_policy:
 
     out_dir.mkdir(parents=True, exist_ok=True)
     for name, df in out.items():
+        if df.empty and name in EMPTY_COLUMNS:
+            df = pd.DataFrame(columns=EMPTY_COLUMNS[name])
+            out[name] = df
         df.to_csv(out_dir / f"{name}.csv", index=False)
         with open(out_dir / f"{name}.md", "w", encoding="utf-8") as fh:
             fh.write(_markdown(df, name))

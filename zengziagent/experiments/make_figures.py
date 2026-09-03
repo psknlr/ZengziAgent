@@ -2,7 +2,7 @@
 
 * ``fig_ablation_forest``      ΔF1 (ablated − full) with 95% bootstrap CIs, one panel per dataset
 * ``fig_per_label_accuracy``   per-label unit accuracy by backend (Figure 3)
-* ``fig_multirun_agreement``   mean inter-run agreement with SD error bars (replaces the heatmap grid)
+* ``fig_multirun_agreement``   mean pairwise inter-run agreement with the SD across run pairs as error bars (replaces the heatmap grid)
 * ``fig_reflection_delta``     R2 − R1 per-label accuracy differences (replaces the composite diagnostic)
 * ``fig_tau_sensitivity``      F1 vs tau
 All panels use >= 9 pt fonts at 89/183 mm widths and do not rely on colour alone.
@@ -109,7 +109,8 @@ def fig_multirun_agreement(tables: Path, out: Path) -> None:
         return
     fig, ax = plt.subplots(figsize=(89 * MM, 60 * MM))
     labels = [f"{r.backend}\n{r.dataset}" for r in df.itertuples()]
-    ax.bar(range(len(df)), df["inter_run_agreement"], yerr=df["f1_sd"], capsize=3, edgecolor="black", lw=0.4, color="0.75")
+    yerr = df["inter_run_agreement_sd"].fillna(0.0) if "inter_run_agreement_sd" in df.columns else None
+    ax.bar(range(len(df)), df["inter_run_agreement"], yerr=yerr, capsize=3, edgecolor="black", lw=0.4, color="0.75")
     ax.set_xticks(range(len(df)))
     ax.set_xticklabels(labels, rotation=30, ha="right")
     ax.set_ylim(0, 1)

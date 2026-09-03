@@ -26,7 +26,7 @@ from typing import Optional
 
 from ..schema import SamplingParams
 from ..utils import LOG, utc_now
-from .base import ChatMessage, LLMBackend, LLMResponse, infer_family
+from .base import ChatMessage, LLMBackend, LLMRequestError, LLMResponse, infer_family
 from .cache import ResponseCache
 
 
@@ -46,7 +46,7 @@ PROVIDERS: dict[str, ProviderSpec] = {
         "OPENROUTER_API_KEY",
         {"HTTP-Referer": "https://github.com/psknlr/ZengziAgent", "X-Title": "ZengziAgent"},
     ),
-    "poe": ProviderSpec("poe", "https://api.poe.com/v1", "POE_API_KEY", {}),
+    "poe": ProviderSpec("poe", "https://api.poe.com/v1", "POE_API_KEY", {}, supports_seed=False),  # Poe documents 'seed' as ignored
     "minimax": ProviderSpec("minimax", "https://api.minimax.io/v1", "MINIMAX_API_KEY", {}, supports_seed=False),
     "minimax-cn": ProviderSpec("minimax-cn", "https://api.minimaxi.com/v1", "MINIMAX_API_KEY", {}, supports_seed=False),
     "openai": ProviderSpec("openai", "https://api.openai.com/v1", "OPENAI_API_KEY", {}),
@@ -55,6 +55,8 @@ PROVIDERS: dict[str, ProviderSpec] = {
 }
 
 _RETRY_STATUS = {408, 409, 425, 429, 500, 502, 503, 504}
+
+
 
 
 class OpenAICompatibleBackend(LLMBackend):
@@ -113,6 +115,41 @@ class OpenAICompatibleBackend(LLMBackend):
             return None
         return self.model in ids
 
+    def probe_capabilities(self) -> dict:
+        """Look the model up in the provider catalogue (once) and record what it supports.
+
+        OpenRouter exposes ``supported_parameters`` per model; ``seed`` is only sent when the
+        catalogue says the model honours it, so the manifest never claims a seed that was ignored."""
+        if getattr(self, "_capabilities", None) is not None:
+            return self._capabilities
+        caps: dict = {"catalogue_checked": False, "listed": None, "supported_parameters": None}
+        try:
+            r = self._client.get("/models")
+            r.raise_for_status()
+            entries = [m for m in r.json().get("data", []) if isinstance(m, dict)]
+            caps["catalogue_checked"] = True
+            entry = next((m for m in entries if m.get("id") == self.model), None)
+            caps["listed"] = entry is not None
+            if entry is not None:
+                sp = entry.get("supported_parameters")
+                if isinstance(sp, list):
+                    caps["supported_parameters"] = sp
+                    self.supports_seed = self.supports_seed and ("seed" in sp)
+                cw = entry.get("context_length") or (entry.get("context_window") or {}).get("context_length")
+                if cw:
+                    caps["context_length"] = cw
+                top = entry.get("top_provider") or {}
+                if top.get("max_completion_tokens"):
+                    caps["max_completion_tokens"] = top["max_completion_tokens"]
+        except Exception as exc:  # pragma: no cover - network
+            LOG.warning("capability probe failed for %s: %s", self.provider, exc)
+        caps["seed_sent"] = bool(self.supports_seed)
+        self._capabilities = caps
+        return caps
+
+    def describe(self) -> dict:
+        return {"provider": self.provider, "model": self.model, "family": self.family, "base_url": self.base_url, "supports_seed": self.supports_seed}
+
     def complete(
         self,
         messages: list[ChatMessage],
@@ -143,11 +180,9 @@ class OpenAICompatibleBackend(LLMBackend):
         t0 = time.time()
         raw = self._post_with_retry("/chat/completions", body)
         latency = time.time() - t0
-        choice = (raw.get("choices") or [{}])[0]
+        choice = raw["choices"][0]
         message = choice.get("message") or {}
-        text = message.get("content") or ""
-        if isinstance(text, list):  # some providers return content parts
-            text = "".join(part.get("text", "") for part in text if isinstance(part, dict))
+        text = _extract_text(message)
         usage = raw.get("usage") or {}
         resp = LLMResponse(
             text=text,
@@ -163,8 +198,11 @@ class OpenAICompatibleBackend(LLMBackend):
             cached=False,
             params={k: v for k, v in body.items() if k != "messages"},
         )
-        if self.cache is not None:
+        cacheable = bool(text.strip()) and (resp.finish_reason or "stop") not in _NON_CACHEABLE_FINISH
+        if self.cache is not None and cacheable:
             self.cache.put(key, self.provider, self.model, run_index, tag, body, resp.to_dict())
+        elif not cacheable:
+            LOG.warning("%s response for %s not cached (finish_reason=%s, empty=%s)", self.provider, tag, resp.finish_reason, not text.strip())
         return resp
 
     # ------------------------------------------------------------ internals
@@ -182,11 +220,13 @@ class OpenAICompatibleBackend(LLMBackend):
                 r = self._client.post(path, json=body)
                 if r.status_code in _RETRY_STATUS:
                     raise httpx.HTTPStatusError(f"retryable status {r.status_code}: {r.text[:300]}", request=r.request, response=r)
-                r.raise_for_status()
+                if r.status_code >= 400:  # 4xx other than rate limits: retrying cannot help
+                    raise LLMRequestError(f"{self.provider} HTTP {r.status_code} for model '{self.model}': {r.text[:500]}")
                 data = r.json()
-                if "error" in data and not data.get("choices"):
-                    raise RuntimeError(f"provider error: {data['error']}")
+                _validate_payload(data)
                 return data
+            except LLMRequestError:
+                raise
             except (httpx.TimeoutException, httpx.NetworkError, httpx.HTTPStatusError, RuntimeError, ValueError) as exc:
                 last_err = exc
                 if attempt >= self.max_retries:
@@ -195,6 +235,34 @@ class OpenAICompatibleBackend(LLMBackend):
                 LOG.warning("%s call failed (attempt %d/%d): %s; retrying in %.1fs", self.provider, attempt + 1, self.max_retries, exc, backoff)
                 time.sleep(backoff)
         raise RuntimeError(f"LLM request failed after {self.max_retries + 1} attempts: {last_err}")
+
+
+_NON_CACHEABLE_FINISH = {"length", "content_filter", "error"}
+
+
+def _extract_text(message: dict) -> str:
+    text = message.get("content")
+    if isinstance(text, list):  # content parts
+        text = "".join(part.get("text", "") for part in text if isinstance(part, dict))
+    return text or ""
+
+
+def _validate_payload(data: dict) -> None:
+    """Raise a *retryable* error for HTTP-200 payloads that carry no usable completion."""
+    if not isinstance(data, dict):
+        raise RuntimeError("provider returned a non-object payload")
+    if "error" in data and not data.get("choices"):
+        raise RuntimeError(f"provider error: {str(data['error'])[:300]}")
+    choices = data.get("choices") or []
+    if not choices or not isinstance(choices[0], dict):
+        raise RuntimeError(f"provider returned no choices: {str(data)[:300]}")
+    choice = choices[0]
+    if choice.get("error"):
+        raise RuntimeError(f"choice-level error: {str(choice['error'])[:300]}")
+    if choice.get("finish_reason") == "error":
+        raise RuntimeError("provider reported finish_reason=error")
+    if not _extract_text(choice.get("message") or {}).strip():
+        raise RuntimeError(f"empty completion (finish_reason={choice.get('finish_reason')})")
 
 
 def resolve_backend(
