@@ -33,7 +33,8 @@ from .features import CORE, EXTENDED, FULL
 
 
 def winsorize(x: np.ndarray, q: float = 0.99) -> tuple[np.ndarray, float]:
-    cap = float(np.quantile(x, q))
+    """Cap at the 99th percentile taken as an *observed* count so the response stays integer-valued."""
+    cap = float(np.quantile(x, q, method="higher"))
     return np.minimum(x, cap), cap
 
 
@@ -96,9 +97,9 @@ def top_decile_test(df: pd.DataFrame, features: list[str], y: str = "citations",
         a, b = top[f].dropna().to_numpy(), rest[f].dropna().to_numpy()
         if len(a) < 2 or len(b) < 2:
             continue
-        U, p = stats.mannwhitneyu(a, b, alternative="two-sided")
-        r_rb = 1 - 2 * U / (len(a) * len(b))
-        out.append({"feature": f, "n_top": int(len(a)), "n_rest": int(len(b)), "median_top": float(np.median(a)), "median_rest": float(np.median(b)), "U": float(U), "p": float(p), "rank_biserial": float(r_rb)})
+        U, p = stats.mannwhitneyu(a, b, alternative="two-sided")  # U is U1 of the top-decile group
+        r_rb = 2 * U / (len(a) * len(b)) - 1  # = P(top > rest) - P(top < rest): positive when the top decile is larger
+        out.append({"feature": f, "n_top": int(len(a)), "n_rest": int(len(b)), "median_top": float(np.median(a)), "median_rest": float(np.median(b)), "U": float(U), "p": float(p), "rank_biserial": float(r_rb), "direction": "positive = higher values in the top citation decile"})
     return out
 
 

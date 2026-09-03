@@ -103,9 +103,12 @@ def train_and_predict(
     lab2id = {c: i for i, c in enumerate(CLASSES)}
 
     def collate(batch):
-        sep = tok.sep_token or "\n"  # GPT-2 has no [SEP] token
-        texts = [(b["context"] + " " + sep + " " + b["text"]) if b["context"] else b["text"] for b in batch]
-        enc = tok(texts, truncation=True, max_length=max_length, padding=True, return_tensors="pt")
+        if context_window and any(b["context"] for b in batch):
+            # pair encoding inserts the model's own separator (none for GPT-2) and truncates the
+            # context ("only_first") rather than the sentence being classified
+            enc = tok([b["context"] or "" for b in batch], [b["text"] for b in batch], truncation="only_first", max_length=max_length, padding=True, return_tensors="pt")
+        else:
+            enc = tok([b["text"] for b in batch], truncation=True, max_length=max_length, padding=True, return_tensors="pt")
         enc["labels"] = torch.tensor([lab2id[b["label"]] for b in batch])
         return enc
 
