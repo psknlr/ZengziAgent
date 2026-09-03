@@ -52,5 +52,5 @@ no parameter update.  The specification and the rendered prompt are written next
   (mean ± SD, inter-run label agreement, Fleiss' κ) is reported separately.
 
 Outputs: `results/tables/ablation_main.{csv,md}` (main table: Dataset, Backend, Ablation,
-ΔAccuracy, ΔF1, 95% CI, p, adjusted p), `ablation_contrast`, `backend_pairwise`,
+ΔAccuracy, ΔF1, 95% CI, p, adjusted p; `n_units` = distinct evaluated units, `n_unit_run_pairs` = units × runs entering the pooled counts), `ablation_contrast`, `backend_pairwise`,
 `multirun_stability`, `reflection_r1_r2`, and `table_ablation_full_metrics` (Supplementary P/R/F1).

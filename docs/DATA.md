@@ -17,6 +17,11 @@ Major_claim 163 – identical to Table 4 of the manuscript.  **Note:** the `Majo
 present in the public release; the manuscript text calling Major_Claim a "study-specific extension"
 should be reconciled with this fact.
 
+**Boundary whitespace.** 23% of the released span offsets include a leading or trailing space.
+Because model spans are stripped before alignment, such offsets would make exact span matches
+unattainable; the loader therefore trims boundary whitespace from every gold span (no span becomes
+empty, token counts are unchanged) and keeps the original label string in `raw_label`.
+
 Evaluation uses the **test split (110 reviews, 816 units)**; demonstrations are selected from the
 train split only (`Planner`, coverage-greedy, deterministic).
 
