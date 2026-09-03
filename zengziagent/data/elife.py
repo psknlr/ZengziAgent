@@ -214,7 +214,8 @@ def build_review_records(
             else:
                 parts = []
                 for rep in reports:
-                    header = f"[Round {rep.round_index} – Reviewer {rep.reviewer}]"
+                    who = "Consolidated decision letter" if rep.reviewer == "editor-consolidated" else f"Reviewer {rep.reviewer}"
+                    header = f"[Round {rep.round_index} – {who}]"
                     parts.append(header + "\n" + rep.text)
                 records.append(
                     ReviewRecord(
