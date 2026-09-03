@@ -163,9 +163,11 @@ class OpenAICompatibleBackend(LLMBackend):
             "model": self.model,
             "messages": msg_dicts,
             "temperature": params.temperature,
-            "top_p": params.top_p,
             "max_tokens": params.max_tokens,
         }
+        # top_p = 1.0 is the no-op default; recent Anthropic models reject temperature *and* top_p together
+        if params.top_p is not None and params.top_p < 1.0 and self.family != "anthropic":
+            body["top_p"] = params.top_p
         if params.seed is not None and self.supports_seed:
             body["seed"] = params.seed + run_index
         body.update(self.extra_body)

@@ -28,7 +28,7 @@ from ..llm.base import LLMBackend, LLMRequestError
 from ..pipeline import ZengziAgentPipeline
 from ..planner import Planner
 from ..schema import PipelineConfig, ReviewRecord
-from ..utils import LOG, git_commit, read_jsonl, repo_root, setup_logging, utc_now, write_json, write_jsonl
+from ..utils import LOG, git_commit, read_json, read_jsonl, repo_root, setup_logging, utc_now, write_json, write_jsonl
 from .common import ExperimentConfig, run_dir, strip_gold
 from .configs import ORDER, get_config
 
@@ -45,7 +45,7 @@ def run_is_complete(rd: Path, expected_ids: list[str]) -> bool:
         return False
     try:
         man = read_json(man_path)
-    except Exception:
+    except (OSError, ValueError):  # unreadable / corrupt manifest -> re-run
         return False
     return list(man.get("record_ids", [])) == list(expected_ids) and int(man.get("n_errors", 0) or 0) == 0
 
@@ -138,7 +138,9 @@ def run_experiment(
         "backend_capabilities": capabilities,
         "seed_sent": bool(capabilities.get("seed_sent", False)) and exp.sampling.seed is not None,
         "config": config.to_dict(),
+        "effective_retry_budget": config.max_refinement_retries if (config.use_validation and config.use_refinement) else 0,
         "sampling": exp.sampling.to_dict(),
+        "request_params_sent": next((a.request_params for r in results for a in r.attempts if a.request_params), None),
         "limit": limit,
         "run_index": run_index,
         "round": 2 if previous_run_dir is not None else 1,
@@ -199,6 +201,8 @@ def main(argv=None) -> None:
     for ds in datasets:
         for cid in configs:
             overrides = {"max_refinement_retries": exp.max_retries, "alignment_similarity_threshold": exp.alignment_threshold}
+            if not get_config(cid).use_refinement:
+                overrides["max_refinement_retries"] = 0  # R = 0 for A4, A6, B0 (documented)
             if args.prompt_synthesis:
                 overrides["prompt_synthesis"] = args.prompt_synthesis
             cfg = get_config(cid, **overrides)

@@ -27,6 +27,7 @@ class Attempt:
     prompt_tokens: Optional[int] = None
     completion_tokens: Optional[int] = None
     finish_reason: Optional[str] = None
+    request_params: Optional[dict] = None
 
     def to_dict(self) -> dict:
         return self.__dict__.copy()
@@ -148,7 +149,7 @@ class ZengziAgentPipeline:
                 )
                 report, spans = self.validator.validate(parsed, processed)  # line 5 + 7
                 result.attempts.append(
-                    Attempt(kind, resp.text, len(parsed.annotations), report.to_dict(), resp.latency_s, resp.model_returned, resp.cached, resp.prompt_tokens, resp.completion_tokens, resp.finish_reason)
+                    Attempt(kind, resp.text, len(parsed.annotations), report.to_dict(), resp.latency_s, resp.model_returned, resp.cached, resp.prompt_tokens, resp.completion_tokens, resp.finish_reason, resp.params or None)
                 )
                 result.final_xml = resp.text
                 if not (self.config.use_validation and report.blocking):

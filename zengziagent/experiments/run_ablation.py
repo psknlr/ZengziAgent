@@ -38,7 +38,8 @@ def main(argv=None) -> None:
         backend = build_backend(spec, args.cache)
         for ds in datasets:
             for cid in args.configs:
-                cfg = get_config(cid, max_refinement_retries=exp.max_retries, alignment_similarity_threshold=exp.alignment_threshold)
+                base = get_config(cid)
+                cfg = get_config(cid, max_refinement_retries=exp.max_retries if base.use_refinement else 0, alignment_similarity_threshold=exp.alignment_threshold)
                 for k in range(runs):
                     try:
                         run_experiment(exp, ds, spec, cfg, k, out_root=args.out, limit=args.limit, workers=args.workers, force=args.force, backend=backend, cache_path=args.cache)

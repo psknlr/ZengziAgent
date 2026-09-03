@@ -6,10 +6,10 @@ Every run directory `results/raw/<dataset>/<backend>/<config>/run<k>/` contains:
 |---|---|---|
 | LLM | `manifest.json` | provider, `model_requested`, `models_returned` (ids reported by the provider for every call), backend family |
 | API | `manifest.json` | `started_at`, `finished_at` (UTC), elapsed time, number of calls, cache hits, token usage, `n_truncated` (finish_reason = length), `base_url`, `backend_capabilities` (catalogue entry, supported parameters) |
-| Sampling | `manifest.json` / `configs/experiment.yaml` | temperature 0.0, top_p 1.0, max_tokens 8192, seed (+ run index); `seed_sent` records whether the provider/model actually accepts a seed (Poe ignores it; OpenRouter is checked per model) |
+| Sampling | `manifest.json` / `configs/experiment.yaml` | temperature 0.0, top_p 1.0, max_tokens 8192, seed (+ run index); `seed_sent` records whether the provider/model actually accepts a seed (Poe ignores it; OpenRouter is checked per model); `top_p` is transmitted only when < 1.0 and never to Anthropic models (which reject temperature and top_p together); `request_params_sent` archives the parameters actually sent |
 | Repetition | run directories | 3 runs (`run0..run2`), pooled or single-run analysis (`--runs-policy`) |
 | Prompt | `prompt_bundle.json`, `task_specification.json` | full system prompt, user template, prompt hash, specification hash, synthesis mode (deterministic / Table 2 meta-prompt), FIB text |
-| Validation | `manifest.json`, `predictions.jsonl` | retry budget R = 2, per-review retries, validation issues per attempt, flagged reviews |
+| Validation | `manifest.json`, `predictions.jsonl` | retry budget R = 2 (`effective_retry_budget`, 0 for A4/A6/B0), per-review retries, validation issues per attempt, flagged reviews |
 | Alignment | `manifest.json` | tokenizer, similarity threshold 0.80, normalisation, boundary snapping, tie-breaking rule |
 | Dataset | `manifest.json`, `data/*/manifest_*.json` | exact record ids, SHA-256 of each text, dataset hash |
 | Transformers | baseline `manifest.json` | checkpoint, seed, optimizer/scheduler, batch sizes, epochs, early stopping, training history |

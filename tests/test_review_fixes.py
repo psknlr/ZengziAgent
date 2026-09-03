@@ -167,3 +167,56 @@ def test_empty_completions_are_retried_and_truncations_not_cached(monkeypatch, t
         assert r3.cached and _Flaky.calls == 4
     finally:
         srv.shutdown()
+
+
+
+def test_run_is_complete_matches_record_ids_and_errors(tmp_path):
+    from zengziagent.experiments.run_annotation import run_is_complete
+    from zengziagent.utils import write_json
+
+    rd = tmp_path / "run0"
+    write_json(rd / "manifest.json", {"record_ids": ["a", "b"], "n_errors": 0})
+    assert run_is_complete(rd, ["a", "b"]) is True
+    assert run_is_complete(rd, ["a"]) is False  # a --limit subset never passes for the full set
+    write_json(rd / "manifest.json", {"record_ids": ["a", "b"], "n_errors": 1})
+    assert run_is_complete(rd, ["a", "b"]) is False
+    assert run_is_complete(tmp_path / "missing", ["a"]) is False
+
+
+class _Echo(BaseHTTPRequestHandler):
+    bodies: list = []
+
+    def do_POST(self):  # noqa: N802
+        n = int(self.headers.get("Content-Length", 0))
+        _Echo.bodies.append(json.loads(self.rfile.read(n)))
+        payload = {"id": "x", "model": "m", "choices": [{"message": {"role": "assistant", "content": "<annotations></annotations>"}, "finish_reason": "stop"}]}
+        body = json.dumps(payload).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, *a):
+        pass
+
+
+def test_top_p_sent_only_when_constraining_and_never_to_anthropic(monkeypatch):
+    from zengziagent.schema import SamplingParams
+
+    monkeypatch.setenv("NO_PROXY", "127.0.0.1,localhost")
+    monkeypatch.setenv("no_proxy", "127.0.0.1,localhost")
+    srv = HTTPServer(("127.0.0.1", 0), _Echo)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    try:
+        url = f"http://127.0.0.1:{srv.server_port}/v1"
+        be = OpenAICompatibleBackend(provider="custom", model="openai/gpt-4o", api_key="k", base_url=url)
+        be.complete([ChatMessage("user", "x")], SamplingParams(temperature=0.0, top_p=1.0))
+        assert "top_p" not in _Echo.bodies[-1] and _Echo.bodies[-1]["temperature"] == 0.0
+        be.complete([ChatMessage("user", "y")], SamplingParams(temperature=0.0, top_p=0.9))
+        assert _Echo.bodies[-1]["top_p"] == 0.9
+        claude = OpenAICompatibleBackend(provider="custom", model="anthropic/claude-sonnet-4.6", api_key="k", base_url=url)
+        claude.complete([ChatMessage("user", "z")], SamplingParams(temperature=0.0, top_p=0.9))
+        assert "top_p" not in _Echo.bodies[-1]
+    finally:
+        srv.shutdown()

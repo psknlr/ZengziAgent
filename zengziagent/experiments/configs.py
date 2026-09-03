@@ -44,7 +44,7 @@ ABLATIONS: dict[str, PipelineConfig] = {
         config_id="A2",
         name="w/o Task-Adaptive Prompting",
         use_adaptive_prompting=False,
-        description="The compiled, backend-rendered prompt P_{D,M} is replaced by the Fixed Instruction Baseline P_fixed (Supplementary): a dataset-independent instruction containing only the annotation objective, the permitted labels and the output format; no dataset profile, no examples, no context-specific instructions, no backend-specific rendering. All other stages unchanged.",
+        description="The compiled, backend-rendered prompt P_{D,M} is replaced by the Fixed Instruction Baseline P_fixed (Supplementary): a dataset-independent instruction containing only the annotation objective, the permitted labels and the output format; no dataset profile, no examples, no context-specific instructions, no backend-specific rendering. The Planner specification is archived but not consumed; all other stages unchanged.",
         replacement="P_fixed (Fixed Instruction Baseline) instead of P_adaptive(S_D, M).",
     ),
     "A3": replace(

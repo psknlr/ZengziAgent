@@ -83,7 +83,7 @@ Step by step (each command has `--help`):
 | Audit | `python -m zengziagent.evaluation.audit results/master/master_results.csv [--manuscript-csv table11.csv]` | consistency report (F1 = 2PR/(P+R), counts, Accuracy = Recall diagnosis, pooled vs mean) |
 | Scientometrics | `python -m zengziagent.scientometrics.build_features ...` · `analysis` | `results/scientometrics/*.csv|json`, `fig_scientometrics.png` |
 
-The `zengzi` console script (`pip install -e .`) exposes the same commands
+The `zengzi` console script (requires an **editable** install of the checkout, `pip install -e .`, because `configs/` and `prompts/` are read from the repository) exposes the same commands
 (`zengzi annotate|ablate|reflect|evaluate|analyze|tables|figures|audit|baseline|scientometrics`).
 
 ## 3b. Fast reproduction in Google Colab

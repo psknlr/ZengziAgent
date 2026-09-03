@@ -9,7 +9,7 @@ the **same test cases** (paired design).
 | F  | Full ZengziAgent | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | – |
 | B0 | Direct LLM + Fixed Instruction Baseline | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | one call with `P_fixed`; raw text; tolerant single parse; verbatim match only |
 | A1 | w/o Planner | ✗ | ✓ | ✓ | ✓ | ✓ | ✓ | generic specification `S_generic` (label names + one-line definitions, objective, output format); no dataset profile, no demonstration selection, no dataset-specific constraints |
-| A2 | w/o Task-Adaptive Prompting | ✓ | ✗ | ✓ | ✓ | ✓ | ✓ | `P_fixed` (FIB) instead of `P_adaptive(S_D, M) = R_M(C(S_D))`; the Planner output is still used by the validator (allowed labels, rules) |
+| A2 | w/o Task-Adaptive Prompting | ✓ | ✗ | ✓ | ✓ | ✓ | ✓ | `P_fixed` (FIB) instead of `P_adaptive(S_D, M) = R_M(C(S_D))`; the Planner still runs and its specification is archived (`task_specification.json`), but no downstream stage consumes it - validation uses the schema label set, as in every configuration |
 | A3 | w/o deterministic preprocessing | ✓ | ✓ | ✗ | ✓ | ✓ | ✓ | identity mapping: raw text is the prompt input and the alignment reference |
 | A4 | w/o Recorder validation/refinement | ✓ | ✓ | ✓ | ✗ | ✗ | ✓ | first response parsed tolerantly; illegal labels and unrecoverable spans are kept as predictions (false positives) |
 | A5 | w/o Text Alignment | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ | exact string matching only: normalised matching, fuzzy recovery, boundary correction and token-range remapping disabled; non-verbatim spans rejected (false positives); validation still flags them and may trigger refinement |

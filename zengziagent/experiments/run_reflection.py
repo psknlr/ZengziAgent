@@ -37,7 +37,8 @@ def main(argv=None) -> None:
     backend = build_backend(args.backend, args.cache)
     for ds in datasets:
         for cid in args.configs:
-            cfg = get_config(cid, max_refinement_retries=exp.max_retries, alignment_similarity_threshold=exp.alignment_threshold, reflection_rounds=2)
+            base = get_config(cid)
+            cfg = get_config(cid, max_refinement_retries=exp.max_retries if base.use_refinement else 0, alignment_similarity_threshold=exp.alignment_threshold, reflection_rounds=2)
             for k in range(runs):
                 r1 = run_dir(args.out, ds, args.backend, cid, k)
                 if not (r1 / "predictions.jsonl").exists():

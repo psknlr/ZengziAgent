@@ -23,6 +23,11 @@ class ExperimentConfig:
     def load(cls, path: Optional[str] = None) -> "ExperimentConfig":
         root = repo_root()
         p = Path(path) if path else root / "configs" / "experiment.yaml"
+        if not p.exists():
+            raise FileNotFoundError(
+                f"{p} not found. The experiment scripts read configs/ and prompts/ from the repository checkout: "
+                "run them from a clone installed with `pip install -e .` (or pass --experiment-config)."
+            )
         with open(p, "r", encoding="utf-8") as fh:
             return cls(raw=yaml.safe_load(fh), root=root)
 
