@@ -22,6 +22,7 @@ import os
 import random
 import time
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Optional
 
 from ..schema import SamplingParams
@@ -51,7 +52,7 @@ PROVIDERS: dict[str, ProviderSpec] = {
     "minimax-cn": ProviderSpec("minimax-cn", "https://api.minimaxi.com/v1", "MINIMAX_API_KEY", {}, supports_seed=False),
     "openai": ProviderSpec("openai", "https://api.openai.com/v1", "OPENAI_API_KEY", {}),
     "anthropic": ProviderSpec("anthropic", "https://api.anthropic.com/v1", "ANTHROPIC_API_KEY", {}, supports_seed=False),
-    "custom": ProviderSpec("custom", os.environ.get("LLM_BASE_URL", ""), "LLM_API_KEY", {}),
+    "custom": ProviderSpec("custom", "", "LLM_API_KEY", {}),  # base URL from $LLM_BASE_URL at construction time
 }
 
 _RETRY_STATUS = {408, 409, 425, 429, 500, 502, 503, 504}
@@ -82,7 +83,10 @@ class OpenAICompatibleBackend(LLMBackend):
         self.provider = provider
         self.model = model
         self.family = family or infer_family(model)
-        self.base_url = (base_url or spec.base_url).rstrip("/")
+        resolved = base_url or (os.environ.get("LLM_BASE_URL") if provider == "custom" else (spec.base_url if spec else None))
+        if not resolved:
+            raise LLMRequestError(f"no base URL for provider '{provider}': set $LLM_BASE_URL or pass base_url")
+        self.base_url = resolved.rstrip("/")
         self.api_key = api_key or (os.environ.get(spec.api_key_env) if spec else None) or os.environ.get("LLM_API_KEY")
         if not self.api_key:
             env = spec.api_key_env if spec else "LLM_API_KEY"
@@ -229,7 +233,7 @@ class OpenAICompatibleBackend(LLMBackend):
                 return data
             except LLMRequestError:
                 raise
-            except (httpx.TimeoutException, httpx.NetworkError, httpx.HTTPStatusError, RuntimeError, ValueError) as exc:
+            except (httpx.TransportError, httpx.HTTPStatusError, RuntimeError, ValueError) as exc:
                 last_err = exc
                 if attempt >= self.max_retries:
                     break
@@ -267,6 +271,32 @@ def _validate_payload(data: dict) -> None:
         raise RuntimeError(f"empty completion (finish_reason={choice.get('finish_reason')})")
 
 
+def load_backends_config(backends_yaml: Optional[str] = None) -> dict:
+    import yaml  # noqa: WPS433
+
+    from ..utils import repo_root
+
+    path = Path(backends_yaml) if backends_yaml else repo_root() / "configs" / "backends.yaml"
+    if not path.exists():
+        raise FileNotFoundError(f"{path} not found: run from the repository checkout (pip install -e .) or set ZENGZI_ROOT")
+    with open(path, "r", encoding="utf-8") as fh:
+        return yaml.safe_load(fh)
+
+
+def available_aliases(provider: str, backends_yaml: Optional[str] = None) -> list[str]:
+    """Backend aliases that have a model configured for ``provider`` (order of the YAML)."""
+    cfg = load_backends_config(backends_yaml)
+    return [alias for alias, entry in cfg.get("backends", {}).items() if provider in (entry.get("models") or {})]
+
+
+def default_backends(provider: str, backends_yaml: Optional[str] = None) -> list[str]:
+    """``provider:alias`` specs for the paper's three backends when the provider serves them,
+    otherwise every alias the provider serves (e.g. ``minimax:minimax``)."""
+    avail = available_aliases(provider, backends_yaml)
+    chosen = [a for a in ("claude", "gpt4o", "gemini") if a in avail] or avail
+    return [f"{provider}:{a}" for a in chosen]
+
+
 def resolve_backend(
     spec: str,
     backends_yaml: Optional[str] = None,
@@ -290,19 +320,13 @@ def resolve_backend(
         model = rest[len("model=") :]
         family = None
     else:
-        import yaml  # noqa: WPS433
-
-        from ..utils import repo_root
-
-        path = backends_yaml or str(repo_root() / "configs" / "backends.yaml")
-        with open(path, "r", encoding="utf-8") as fh:
-            cfg = yaml.safe_load(fh)
+        cfg = load_backends_config(backends_yaml)
         entry = cfg.get("backends", {}).get(rest)
         if entry is None:
-            raise ValueError(f"unknown backend alias '{rest}' in {path}; known: {sorted(cfg.get('backends', {}))}")
+            raise ValueError(f"unknown backend alias '{rest}'; known: {sorted(cfg.get('backends', {}))}")
         model = entry.get("models", {}).get(provider)
         if model is None:
-            raise ValueError(f"alias '{rest}' has no model configured for provider '{provider}' in {path}")
+            raise ValueError(f"alias '{rest}' has no model configured for provider '{provider}'; aliases served by '{provider}': {available_aliases(provider, backends_yaml)}")
         family = entry.get("family")
         prov_cfg = cfg.get("providers", {}).get(provider, {})
         if prov_cfg.get("base_url"):

@@ -16,7 +16,7 @@ from __future__ import annotations
 import argparse
 import sys
 import time
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Optional
 
@@ -105,8 +105,13 @@ def run_experiment(
     t0 = time.time()
     try:
         if workers > 1:
+            results = [None] * len(evals)
             with ThreadPoolExecutor(max_workers=workers) as ex:
-                results = list(ex.map(work, evals))
+                futures = {ex.submit(work, rec): i for i, rec in enumerate(evals)}
+                for n, fut in enumerate(as_completed(futures), 1):
+                    results[futures[fut]] = fut.result()  # re-raises LLMRequestError
+                    if n % 10 == 0 or n == len(evals):
+                        LOG.info("%s/%s/%s run%d: %d/%d reviews", dataset, backend_spec, config.config_id, run_index, n, len(evals))
         else:
             results = []
             for i, rec in enumerate(evals):
@@ -165,8 +170,20 @@ def run_experiment(
         "is_mock": backend.provider == "mock",
     }
     write_json(rd / "manifest.json", manifest)
-    LOG.info("wrote %s (%d reviews, %.1fs, %d retries, %d flagged)", pred_path, len(results), elapsed, manifest["total_retries"], manifest["n_flagged"])
+    LOG.info("wrote %s (%d reviews, %.1fs, %d retries, %d flagged, %d truncated)", pred_path, len(results), elapsed, manifest["total_retries"], manifest["n_flagged"], manifest["n_truncated"])
+    if manifest["n_errors"]:
+        LOG.error("%d/%d reviews errored in %s; the run is NOT treated as complete and will be re-executed on the next invocation (successful calls are cached)", manifest["n_errors"], len(results), rd)
     return rd
+
+
+def run_had_errors(rd: Path) -> bool:
+    man_path = rd / "manifest.json"
+    if not man_path.exists():
+        return True
+    try:
+        return int(read_json(man_path).get("n_errors", 0) or 0) > 0
+    except (OSError, ValueError):
+        return True
 
 
 def main(argv=None) -> None:
@@ -198,6 +215,7 @@ def main(argv=None) -> None:
         LOG.info("model %s available at %s: %s", backend.model, backend.provider, ok)
         if ok is False:
             sys.exit(f"model '{backend.model}' is not listed by provider '{backend.provider}'")
+    failed: list[str] = []
     for ds in datasets:
         for cid in configs:
             overrides = {"max_refinement_retries": exp.max_retries, "alignment_similarity_threshold": exp.alignment_threshold}
@@ -208,11 +226,15 @@ def main(argv=None) -> None:
             cfg = get_config(cid, **overrides)
             for k in run_indices:
                 try:
-                    run_experiment(exp, ds, args.backend, cfg, k, out_root=args.out, limit=args.limit, workers=args.workers, force=args.force, backend=backend, cache_path=args.cache)
+                    rd = run_experiment(exp, ds, args.backend, cfg, k, out_root=args.out, limit=args.limit, workers=args.workers, force=args.force, backend=backend, cache_path=args.cache)
+                    if run_had_errors(rd):
+                        failed.append(str(rd))
                 except FileNotFoundError as exc:
                     LOG.error("%s", exc)
                 except LLMRequestError as exc:
                     sys.exit(f"non-retryable provider error: {exc}")
+    if failed:
+        sys.exit(f"{len(failed)} run(s) contain errored reviews and must be re-executed: {failed}")
 
 
 if __name__ == "__main__":  # pragma: no cover

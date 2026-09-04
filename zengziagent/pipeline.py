@@ -13,6 +13,7 @@ from .preprocessor import Preprocessor
 from .recorder import AlignedSpan, Recorder, ValidationReport, Validator
 from .schema import PipelineConfig, ReviewRecord, SamplingParams
 from .tokenization import get_tokenizer
+from .utils import LOG
 
 
 @dataclass
@@ -168,5 +169,6 @@ class ZengziAgentPipeline:
             raise  # authentication / unknown model: abort the run instead of persisting empty results
         except Exception as exc:  # keep the run going; the evaluator treats errors as empty output
             result.error = f"{type(exc).__name__}: {exc}"
+            LOG.error("review %s failed: %s", review.review_id, result.error)
         result.timing_s = time.time() - t0
         return result

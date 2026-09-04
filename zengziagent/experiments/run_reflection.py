@@ -14,7 +14,7 @@ from ..llm.base import LLMRequestError
 from ..utils import LOG, setup_logging
 from .common import ExperimentConfig, run_dir
 from .configs import get_config
-from .run_annotation import build_backend, run_experiment
+from .run_annotation import build_backend, run_experiment, run_had_errors
 
 
 def main(argv=None) -> None:
@@ -35,6 +35,7 @@ def main(argv=None) -> None:
     datasets = args.datasets or exp.dataset_names()
     runs = args.runs or exp.runs
     backend = build_backend(args.backend, args.cache)
+    failed: list[str] = []
     for ds in datasets:
         for cid in args.configs:
             base = get_config(cid)
@@ -45,9 +46,13 @@ def main(argv=None) -> None:
                     LOG.warning("no R1 predictions at %s; run run_annotation first", r1)
                     continue
                 try:
-                    run_experiment(exp, ds, args.backend, cfg, k, out_root=args.out, limit=args.limit, workers=args.workers, force=args.force, backend=backend, cache_path=args.cache, previous_run_dir=Path(r1))
+                    rd = run_experiment(exp, ds, args.backend, cfg, k, out_root=args.out, limit=args.limit, workers=args.workers, force=args.force, backend=backend, cache_path=args.cache, previous_run_dir=Path(r1))
+                    if run_had_errors(rd):
+                        failed.append(str(rd))
                 except LLMRequestError as exc:
                     sys.exit(f"non-retryable provider error: {exc}")
+    if failed:
+        sys.exit(f"{len(failed)} run(s) contain errored reviews and must be re-executed: {failed}")
 
 
 if __name__ == "__main__":  # pragma: no cover

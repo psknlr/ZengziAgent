@@ -91,10 +91,15 @@ WORKERS = 4                    # parallel API calls per run
 RUN_REFLECTION = True          # R1 -> R2 for the full configuration
 DATASETS = ["substanreview"]   # add "elife" after uploading data/elife/gold/elife_gold.jsonl (see section 3b)
 
+from zengziagent.llm import available_aliases
 if PROVIDER == "mock":
     BACKENDS = ["mock", "mock:noisy"]
 else:
-    BACKENDS = [f"{PROVIDER}:{a}" for a in BACKEND_ALIASES]
+    served = available_aliases(PROVIDER)          # aliases with a model configured for this provider
+    aliases = [a for a in BACKEND_ALIASES if a in served] or served
+    if aliases != BACKEND_ALIASES:
+        print(f"note: provider '{PROVIDER}' serves {served}; using {aliases}")
+    BACKENDS = [f"{PROVIDER}:{a}" for a in aliases]
 print("backends:", BACKENDS)
 print("fast mode:", FAST, "| reviews per dataset:", LIMIT or "all", "| runs:", RUNS, "| configs:", CONFIGS)""")
 

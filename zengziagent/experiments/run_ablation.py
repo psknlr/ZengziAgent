@@ -14,7 +14,7 @@ from ..llm.base import LLMRequestError
 from ..utils import LOG, setup_logging
 from .common import ExperimentConfig
 from .configs import ORDER, get_config
-from .run_annotation import build_backend, run_experiment
+from .run_annotation import build_backend, run_experiment, run_had_errors
 
 
 def main(argv=None) -> None:
@@ -34,6 +34,7 @@ def main(argv=None) -> None:
     exp = ExperimentConfig.load(args.experiment_config)
     datasets = args.datasets or exp.dataset_names()
     runs = args.runs or exp.runs
+    failed: list[str] = []
     for spec in args.backends:
         backend = build_backend(spec, args.cache)
         for ds in datasets:
@@ -42,12 +43,16 @@ def main(argv=None) -> None:
                 cfg = get_config(cid, max_refinement_retries=exp.max_retries if base.use_refinement else 0, alignment_similarity_threshold=exp.alignment_threshold)
                 for k in range(runs):
                     try:
-                        run_experiment(exp, ds, spec, cfg, k, out_root=args.out, limit=args.limit, workers=args.workers, force=args.force, backend=backend, cache_path=args.cache)
+                        rd = run_experiment(exp, ds, spec, cfg, k, out_root=args.out, limit=args.limit, workers=args.workers, force=args.force, backend=backend, cache_path=args.cache)
+                        if run_had_errors(rd):
+                            failed.append(str(rd))
                     except FileNotFoundError as exc:
                         LOG.error("%s", exc)
                         break
                     except LLMRequestError as exc:
                         sys.exit(f"non-retryable provider error for {spec}: {exc}")
+    if failed:
+        sys.exit(f"{len(failed)} run(s) contain errored reviews and must be re-executed: {failed}")
 
 
 if __name__ == "__main__":  # pragma: no cover

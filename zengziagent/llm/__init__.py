@@ -10,4 +10,5 @@ manifests rather than from memory.
 from .base import ChatMessage, LLMBackend, LLMResponse  # noqa: F401
 from .cache import ResponseCache  # noqa: F401
 from .mock import MockBackend  # noqa: F401
-from .openai_compat import PROVIDERS, OpenAICompatibleBackend, resolve_backend  # noqa: F401
+from .base import LLMRequestError  # noqa: F401
+from .openai_compat import PROVIDERS, OpenAICompatibleBackend, available_aliases, default_backends, resolve_backend  # noqa: F401

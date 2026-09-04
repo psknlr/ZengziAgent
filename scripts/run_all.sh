@@ -5,7 +5,9 @@
 # Every step is idempotent: finished runs are skipped, LLM responses are cached.
 set -euo pipefail
 PROVIDER="${1:-openrouter}"
-BACKENDS=("${PROVIDER}:claude" "${PROVIDER}:gpt4o" "${PROVIDER}:gemini")
+# backends = the paper's three aliases when the provider serves them, else every alias it serves (minimax -> minimax:minimax)
+mapfile -t BACKENDS < <(python -c "import sys; from zengziagent.llm import default_backends; print('\n'.join(default_backends(sys.argv[1])))" "$PROVIDER")
+echo "backends: ${BACKENDS[*]}"
 WORKERS="${WORKERS:-4}"
 
 echo "== 1. data"

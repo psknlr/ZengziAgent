@@ -114,7 +114,9 @@ def git_commit(repo_root: str | Path | None = None) -> str | None:
 
 
 def repo_root() -> Path:
-    return Path(__file__).resolve().parent.parent
+    """Repository checkout holding configs/ and prompts/ (override with $ZENGZI_ROOT)."""
+    env = os.environ.get("ZENGZI_ROOT")
+    return Path(env).resolve() if env else Path(__file__).resolve().parent.parent
 
 
 def env_flag(name: str, default: bool = False) -> bool:

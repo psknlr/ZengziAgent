@@ -69,6 +69,8 @@ def evaluate_all(raw_root: str | Path, out_root: str | Path, exp: ExperimentConf
                 continue
             dataset_cache[ds] = {r.review_id: r for r in evals}
         records = dataset_cache[ds]
+        if man.get("n_errors"):
+            LOG.warning("%s: %s errored review(s) are scored as empty predictions; re-run this directory", run["run_dir"], man["n_errors"])
         preds = list(read_jsonl(run["pred_path"]))
         key_base = {
             "dataset": ds,

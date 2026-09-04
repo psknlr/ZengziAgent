@@ -220,3 +220,17 @@ def test_top_p_sent_only_when_constraining_and_never_to_anthropic(monkeypatch):
         assert "top_p" not in _Echo.bodies[-1]
     finally:
         srv.shutdown()
+
+
+
+def test_alias_listing_and_custom_base_url(monkeypatch):
+    from zengziagent.llm import available_aliases, default_backends
+
+    assert available_aliases("minimax") == ["minimax"] and default_backends("minimax") == ["minimax:minimax"]
+    assert default_backends("openrouter") == ["openrouter:claude", "openrouter:gpt4o", "openrouter:gemini"]
+    monkeypatch.delenv("LLM_BASE_URL", raising=False)
+    with pytest.raises(LLMRequestError):
+        OpenAICompatibleBackend(provider="custom", model="m", api_key="k")
+    monkeypatch.setenv("LLM_BASE_URL", "http://127.0.0.1:9/v1")
+    be = OpenAICompatibleBackend(provider="custom", model="m", api_key="k")
+    assert be.base_url == "http://127.0.0.1:9/v1"
