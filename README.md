@@ -59,7 +59,7 @@ those ids, so the aliases point to dated/current snapshots and the run manifest 
 requested id and the id returned by the provider.  Use `--check-model` to verify an id against the
 provider catalogue before a long run, or pass `provider:model=<id>` explicitly.
 
-`mock` / `mock:noisy` is a deterministic offline backend used only for tests and smoke runs.
+`mock` / `mock:noisy` is a deterministic offline backend used only for tests and smoke runs. `bash scripts/run_all.sh <provider>` and the notebook derive the backend list from `configs/backends.yaml` (the three paper backends where the provider serves them, otherwise every alias it serves, e.g. `minimax:minimax`).
 
 ## 3. Reproducing the experiments
 
@@ -83,7 +83,9 @@ Step by step (each command has `--help`):
 | Audit | `python -m zengziagent.evaluation.audit results/master/master_results.csv [--manuscript-csv table11.csv]` | consistency report (F1 = 2PR/(P+R), counts, Accuracy = Recall diagnosis, pooled vs mean) |
 | Scientometrics | `python -m zengziagent.scientometrics.build_features ...` · `analysis` | `results/scientometrics/*.csv|json`, `fig_scientometrics.png` |
 
-The `zengzi` console script (requires an **editable** install of the checkout, `pip install -e .`, because `configs/` and `prompts/` are read from the repository) exposes the same commands
+Runs are idempotent: a run directory is reused only when its manifest lists the same record ids and no errors; runners exit non-zero when any review errored (re-run to complete it, successful calls are cached). Non-retryable provider errors (bad key, unknown model) abort immediately.
+
+The `zengzi` console script (requires an **editable** install of the checkout, `pip install -e .`, because `configs/` and `prompts/` are read from the repository; alternatively set `ZENGZI_ROOT=/path/to/checkout`) exposes the same commands
 (`zengzi annotate|ablate|reflect|evaluate|analyze|tables|figures|audit|baseline|scientometrics`).
 
 ## 3b. Fast reproduction in Google Colab
