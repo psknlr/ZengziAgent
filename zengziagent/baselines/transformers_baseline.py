@@ -104,9 +104,16 @@ def train_and_predict(
 
     def collate(batch):
         if context_window and any(b["context"] for b in batch):
-            # pair encoding inserts the model's own separator (none for GPT-2) and truncates the
-            # context ("only_first") rather than the sentence being classified
-            enc = tok([b["context"] or "" for b in batch], [b["text"] for b in batch], truncation="only_first", max_length=max_length, padding=True, return_tensors="pt")
+            # pair encoding inserts the model's own separator and truncates the context
+            # ("only_first") rather than the sentence being classified; GPT-2 has no separator,
+            # so a newline marks the boundary.  If the sentence alone exceeds max_length the
+            # tokenizer cannot honour "only_first" and we fall back to "longest_first".
+            ctxs = [(b["context"] or "") + ("" if tok.sep_token else "\n") for b in batch]
+            texts = [b["text"] for b in batch]
+            try:
+                enc = tok(ctxs, texts, truncation="only_first", max_length=max_length, padding=True, return_tensors="pt")
+            except Exception:
+                enc = tok(ctxs, texts, truncation="longest_first", max_length=max_length, padding=True, return_tensors="pt")
         else:
             enc = tok([b["text"] for b in batch], truncation=True, max_length=max_length, padding=True, return_tensors="pt")
         enc["labels"] = torch.tensor([lab2id[b["label"]] for b in batch])

@@ -103,6 +103,9 @@ def make_tables(master_dir: Path, out_dir: Path, exp: ExperimentConfig) -> None:
         return
     tau = exp.tau
     prim = _pool_runs(_primary(master, tau))
+    if prim.empty:
+        LOG.error("no rows at tau=%s, round=1 in %s; nothing to tabulate", tau, master_dir)
+        return
     # ---- Table 11 (performance) : full configuration + baselines
     perf = prim[prim["config_id"].isin(["F", "TB"])].copy()
     perf["Dataset"] = perf["dataset"].map(DATASET_NAMES).fillna(perf["dataset"])

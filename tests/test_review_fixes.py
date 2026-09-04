@@ -32,6 +32,9 @@ def test_numeric_character_references_are_decoded():
     raw = "<annotations><annotation><text>don&#39;t agree &#x2019;s &amp;lt;</text><label>Eval_neg</label></annotation></annotations>"
     p = parse_xml_annotations(raw)
     assert p.annotations[0].text == "don't agree ’s &lt;"
+    from zengziagent.analyzer import _unescape
+
+    assert _unescape("The &notably strong Q&A, &copyright 2020, AT&T; &amp; &#39;x&#39;") == "The &notably strong Q&A, &copyright 2020, AT&T; & 'x'"
 
 
 def test_refinement_skips_empty_assistant_turn():
@@ -234,3 +237,49 @@ def test_alias_listing_and_custom_base_url(monkeypatch):
     monkeypatch.setenv("LLM_BASE_URL", "http://127.0.0.1:9/v1")
     be = OpenAICompatibleBackend(provider="custom", model="m", api_key="k")
     assert be.base_url == "http://127.0.0.1:9/v1"
+
+
+
+class _Overloaded(BaseHTTPRequestHandler):
+    calls = 0
+
+    def do_POST(self):  # noqa: N802
+        _Overloaded.calls += 1
+        if _Overloaded.calls == 1:
+            body = b'{"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}'
+            self.send_response(529)
+        else:
+            body = json.dumps({"id": "x", "model": "m", "choices": [{"message": {"role": "assistant", "content": "<annotations></annotations>"}, "finish_reason": "stop"}]}).encode()
+            self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, *a):
+        pass
+
+
+def test_server_errors_are_retried(monkeypatch):
+    monkeypatch.setenv("NO_PROXY", "127.0.0.1,localhost")
+    monkeypatch.setenv("no_proxy", "127.0.0.1,localhost")
+    monkeypatch.setattr("zengziagent.llm.openai_compat.time.sleep", lambda s: None)
+    srv = HTTPServer(("127.0.0.1", 0), _Overloaded)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    try:
+        be = OpenAICompatibleBackend(provider="custom", model="m", api_key="k", base_url=f"http://127.0.0.1:{srv.server_port}/v1", max_retries=3)
+        r = be.complete([ChatMessage("user", "x")])
+        assert r.text == "<annotations></annotations>" and _Overloaded.calls == 2
+    finally:
+        srv.shutdown()
+
+
+def test_make_tables_handles_empty_primary_view(tmp_path):
+    from zengziagent.experiments.common import ExperimentConfig
+    from zengziagent.experiments.make_tables import make_tables
+
+    master = pd.DataFrame([{"dataset": "d", "backend": "b", "config_id": "F", "config_name": "Full", "run": 0, "round": 2, "tau": 0.5, "n_units": 1, "n_correct": 1, "tp": 1, "fp": 0, "fn": 0, "accuracy": 1.0, "precision": 1.0, "recall": 1.0, "f1": 1.0, "model_requested": "m", "models_returned": "m", "alignment_applicable": True, "is_mock": True, "n_pred": 1, "n_exact": 1, "n_normalized": 0, "n_fuzzy": 0, "n_rejected": 0, "n_illegal": 0, "exact_span_matches": 1, "sum_best_iou": 1.0}])
+    (tmp_path / "m").mkdir()
+    master.to_csv(tmp_path / "m" / "master_results.csv", index=False)
+    pd.DataFrame(columns=["dataset", "backend", "config_id", "run", "round", "tau", "label"]).to_csv(tmp_path / "m" / "per_label.csv", index=False)
+    make_tables(tmp_path / "m", tmp_path / "t", ExperimentConfig.load())  # only round-2 rows: must return, not raise

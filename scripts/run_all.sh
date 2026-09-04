@@ -7,6 +7,10 @@ set -euo pipefail
 PROVIDER="${1:-openrouter}"
 # backends = the paper's three aliases when the provider serves them, else every alias it serves (minimax -> minimax:minimax)
 mapfile -t BACKENDS < <(python -c "import sys; from zengziagent.llm import default_backends; print('\n'.join(default_backends(sys.argv[1])))" "$PROVIDER")
+if [ ${#BACKENDS[@]} -eq 0 ] || [ -z "${BACKENDS[0]}" ]; then
+  echo "no backend alias in configs/backends.yaml serves provider '$PROVIDER'" >&2
+  exit 1
+fi
 echo "backends: ${BACKENDS[*]}"
 WORKERS="${WORKERS:-4}"
 

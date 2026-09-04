@@ -50,9 +50,13 @@ class ParsedOutput:
         return not self.structural_issues
 
 
+_CHARREF_RE = re.compile(r"&(#\d+|#[xX][0-9a-fA-F]+|[A-Za-z][A-Za-z0-9]*);")
+
+
 def _unescape(s: str) -> str:
-    """Decode named *and* numeric character references (``&#39;``, ``&#x2019;`` ...)."""
-    return html.unescape(s).strip()
+    """Decode named and numeric character references (``&amp;``, ``&#39;``, ``&#x2019;``) - only
+    semicolon-terminated ones, so verbatim text such as ``AT&T`` or ``&notably`` is left intact."""
+    return _CHARREF_RE.sub(lambda m: html.unescape(m.group(0)), s).strip()
 
 
 def parse_xml_annotations(raw: str) -> ParsedOutput:

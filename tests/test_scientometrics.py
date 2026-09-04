@@ -20,10 +20,16 @@ def test_winsor_cap_is_an_observed_count():
 
 
 def test_window_coverage_and_five_year_sum():
-    work = {"publication_year": 2018, "counts_by_year": [{"year": y, "cited_by_count": 10} for y in range(2017, 2027)]}
+    work = {"publication_year": 2018, "retrieved_at": "2026-09-04T00:00:00Z", "counts_by_year": [{"year": y, "cited_by_count": 10} for y in range(2017, 2027)]}
     assert window_coverage(work)[1] is True and five_year_citations(work) == 50
-    old = {"publication_year": 2016, "counts_by_year": [{"year": y, "cited_by_count": 10} for y in range(2017, 2027)]}
+    old = {"publication_year": 2016, "retrieved_at": "2026-09-04T00:00:00Z", "counts_by_year": [{"year": y, "cited_by_count": 10} for y in range(2017, 2027)]}
     assert window_coverage(old)[1] is False and five_year_citations(old) is None
+    # uncited work inside the horizon: OpenAlex returns no years -> complete window with 0 citations
+    uncited = {"publication_year": 2018, "retrieved_at": "2026-09-04T00:00:00Z", "counts_by_year": [], "cited_by_count": 0}
+    assert window_coverage(uncited) == (2018, True) and five_year_citations(uncited) == 0
+    # zero citations in the publication year itself must not make the window incomplete
+    late = {"publication_year": 2018, "retrieved_at": "2026-09-04T00:00:00Z", "counts_by_year": [{"year": y, "cited_by_count": 3} for y in range(2019, 2027)]}
+    assert five_year_citations(late) == 12
 
 
 def test_feature_formulas():

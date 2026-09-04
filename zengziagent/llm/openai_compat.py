@@ -224,7 +224,7 @@ class OpenAICompatibleBackend(LLMBackend):
             try:
                 self._last_call = time.time()
                 r = self._client.post(path, json=body)
-                if r.status_code in _RETRY_STATUS:
+                if r.status_code in _RETRY_STATUS or r.status_code >= 500:  # rate limits, overload (529), server errors
                     raise httpx.HTTPStatusError(f"retryable status {r.status_code}: {r.text[:300]}", request=r.request, response=r)
                 if r.status_code >= 400:  # 4xx other than rate limits: retrying cannot help
                     raise LLMRequestError(f"{self.provider} HTTP {r.status_code} for model '{self.model}': {r.text[:500]}")
