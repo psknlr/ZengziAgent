@@ -1,0 +1,62 @@
+# Externally defined annotation protocol used by the Planner (Stage 1).
+# Labels follow the mapped five-label evaluation scheme (Table 5); the guideline notes
+# follow Table 10.  Nothing in this file is produced by an LLM.
+name: five_label_substantiation
+objective: >-
+  Identify, in a scientific reviewer comment, the text spans that express positive or
+  negative evaluations of the manuscript, the justifications that support those
+  evaluations, and the reviewer's overall recommendation or summary judgment.
+unit_definition: >-
+  A contiguous span of the reviewer comment (typically a sentence or clause; spans may
+  cross sentence boundaries) that performs exactly one of the discourse functions below.
+output_format: xml_annotation_blocks
+labels:
+  - name: Eval_pos
+    polarity: positive
+    definition: A positive evaluative statement expressing approval of some aspect of the manuscript.
+    example: "The paper presents a novel and interesting approach to the problem."
+  - name: Eval_neg
+    polarity: negative
+    definition: A negative evaluative statement expressing criticism of some aspect of the manuscript.
+    example: "The experimental design has several methodological weaknesses."
+  - name: Jus_pos
+    polarity: positive
+    definition: A justification (reason or evidence) that supports a positive evaluation.
+    example: "The authors provide comprehensive ablation studies that validate their design choices."
+  - name: Jus_neg
+    polarity: negative
+    definition: A justification (reason or evidence) that supports a negative evaluation or criticism.
+    example: "The baseline comparisons are limited to outdated methods from 2015."
+  - name: Major_Claim
+    polarity: global
+    definition: The reviewer's overall recommendation, global judgment, or main evaluative conclusion about the manuscript.
+    example: "Overall, I recommend acceptance with minor revisions."
+guideline_notes:
+  - Capture the full source span of each evaluation or justification.
+  - Use only the permitted labels; occurrence numbers are metadata, not label names.
+  - Place each annotation in its own XML block.
+  - Not every evaluation requires a corresponding justification.
+  - Focus on complete discourse spans rather than isolated keywords.
+  - Pay attention to transitional phrases indicating evaluation-valence shifts (e.g. "however", "but").
+  - Include relevant text even when it crosses sentence boundaries.
+  - Treat Major_Claim as the reviewer's overall recommendation or summary judgment, not as an individual criticism.
+  - Maintain consistency when annotating similar phrases and concepts.
+  - Copy every span verbatim from the reviewer comment; never paraphrase, merge or shorten.
+dataset_profiles:
+  substanreview:
+    display_name: SubstanReview-derived
+    domain: machine learning / NLP conference reviews
+    structure: single-round reviews; argument-oriented segments; short paragraphs
+    notes:
+      - Reviews are argument oriented; evaluations are frequently followed immediately by their justification.
+      - Positive and negative evaluations may occur in the same sentence; annotate them as separate spans.
+      - Annotate the reviewer's own overall recommendation as Major_Claim when it is stated.
+  elife:
+    display_name: eLife
+    domain: biomedical and life-science research
+    structure: multi-round decision letters and reviewer reports; long paragraphs; numbered essential revisions
+    notes:
+      - Annotate only reviewer text; editorial boilerplate and author responses are not annotation targets.
+      - Numbered essential-revision items typically contain a negative evaluation followed by a justification.
+      - Dense biomedical terminology in a descriptive sentence does not by itself make the sentence evaluative.
+      - Reviewer reports may span several paragraphs; a Major_Claim usually appears near the beginning or the end.

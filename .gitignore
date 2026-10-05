@@ -1,0 +1,23 @@
+__pycache__/
+*.pyc
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.env
+# downloaded corpora and experiment outputs (regenerate with scripts/)
+data/substanreview/
+data/elife/cache/
+data/elife/reviews*.jsonl
+results/cache/
+results/raw/
+results/baselines/
+results/scientometrics/
+results/figures/*.png
+results/figures/*.pdf
+results/tables/*.tex
+results/mock_smoke/raw/
+results/mock_smoke/raw_baseline/
+results/mock_smoke/master/
+results/mock_smoke/cache.sqlite
+results/scientometrics_synthetic/

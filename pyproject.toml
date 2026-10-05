@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "zengziagent"
+version = "2.0.0"
+description = "ZengziAgent: a schema-conditioned multi-stage LLM framework for fine-grained scientific peer-review annotation (code accompanying the Scientometrics revision)."
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+authors = [{name = "ZengziAgent authors"}]
+dependencies = [
+    "numpy>=1.24",
+    "pandas>=2.0",
+    "scipy>=1.10",
+    "pyyaml>=6.0",
+    "httpx>=0.25",
+]
+
+[project.optional-dependencies]
+nlp = ["spacy>=3.5"]
+figures = ["matplotlib>=3.7"]
+baselines = ["torch>=2.0", "transformers>=4.36", "sentencepiece>=0.1.99", "scikit-learn>=1.3"]
+scientometrics = ["statsmodels>=0.14", "scikit-learn>=1.3", "matplotlib>=3.7"]
+dev = ["pytest>=7.0"]
+all = ["spacy>=3.5", "matplotlib>=3.7", "statsmodels>=0.14", "scikit-learn>=1.3", "pytest>=7.0"]
+
+[project.scripts]
+zengzi = "zengziagent.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["zengziagent*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

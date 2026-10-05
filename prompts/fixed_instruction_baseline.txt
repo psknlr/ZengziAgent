@@ -1,0 +1,15 @@
+You are annotating scientific peer-review comments.
+
+Objective: identify the text spans of the reviewer comment that express (1) a positive evaluation of the manuscript, (2) a negative evaluation of the manuscript, (3) a justification supporting a positive evaluation, (4) a justification supporting a negative evaluation, or (5) the reviewer's overall recommendation or summary judgment.
+
+Permitted labels (use exactly these strings): Eval_pos, Eval_neg, Jus_pos, Jus_neg, Major_Claim
+
+Output format: return only XML of the following form and nothing else.
+<annotations>
+  <annotation>
+    <text>span copied verbatim from the reviewer comment</text>
+    <label>LABEL</label>
+  </annotation>
+</annotations>
+
+Each <text> element must be copied verbatim from the reviewer comment. If no span applies, return <annotations></annotations>.

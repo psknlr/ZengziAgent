@@ -1,0 +1,6 @@
+**Underlying counts for every performance row (Accuracy = N correct / N units; P = TP/(TP+FP); R = TP/(TP+FN)).**
+
+| Dataset | Model | Runs | N units | N correct | TP | FP | FN | N predicted spans | N rejected spans |
+|---|---|---|---|---|---|---|---|---|---|
+| SubstanReview-derived | mock | 2 | 420 | 137 | 97 | 287 | 323 | 384 | 0 |
+| SubstanReview-derived | mock:noisy | 2 | 420 | 131 | 90 | 278 | 330 | 368 | 1 |

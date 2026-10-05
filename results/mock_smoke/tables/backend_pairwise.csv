@@ -1,0 +1,2 @@
+dataset,backend_a,backend_b,f1_a,f1_b,delta_f1,ci_low,ci_high,p_bootstrap,mcnemar_b,mcnemar_c,p_mcnemar,p_adj_bootstrap,p_adj_mcnemar
+substanreview,mock,mock:noisy,0.24129353233830847,0.22842639593908629,0.012867136399222184,-0.003286314585039845,0.03166263777297714,0.14292853573213393,4,4,1.0,0.14292853573213393,1.0
